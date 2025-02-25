@@ -36,8 +36,8 @@ bool AttackAnythingAction::isUseful()
 
     if (!AI_VALUE(bool, "can move around"))
         return false;
-    
-        
+
+
     // if (context->GetValue<TravelTarget*>("travel target")->Get()->isTraveling() &&
     //     ChooseRpgTargetAction::isFollowValid(
     //         bot, *context->GetValue<TravelTarget*>("travel target")->Get()->getPosition()))  // Bot is traveling
@@ -66,6 +66,11 @@ bool AttackAnythingAction::isUseful()
     {
         return false;  // Target is one of the disallowed types
     }
+
+    // Prevent Bots from attacking high level players (way higher level compared to their level)
+    // Since real players would also not start attacking a player way higher level than them
+    if (target->IsPlayer() && target->GetLevel() > bot->getLevel() + 10)
+        return false;
 
     return true;
 }
