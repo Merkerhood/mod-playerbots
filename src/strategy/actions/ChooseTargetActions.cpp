@@ -67,9 +67,13 @@ bool AttackAnythingAction::isUseful()
         return false;  // Target is one of the disallowed types
     }
 
-    // Prevent Bots from attacking high level players (way higher level compared to their level)
+    // Prevent Bots from attacking high level players (way higher level compared to their own level)
     // Since real players would also not start attacking a player way higher level than them
     if (target->IsPlayer() && target->GetLevel() > bot->getLevel() + 10)
+        return false;
+
+    // Prevent Bots from attacking low level players (way lower level compared to their own level)
+    if (target->IsPlayer() && target->GetLevel() < bot->getLevel() - 10)
         return false;
 
     return true;
