@@ -4,7 +4,7 @@
  */
 
 #include "ReleaseSpiritAction.h"
-
+#include "ServerFacade.h"
 #include "Event.h"
 #include "GameGraveyard.h"
 #include "NearestNpcsValue.h"
@@ -13,14 +13,21 @@
 #include "Playerbots.h"
 #include "ServerFacade.h"
 #include "Corpse.h"
+#include "Log.h"
 
 // ReleaseSpiritAction implementation
 bool ReleaseSpiritAction::Execute(Event event)
 {
     if (bot->IsAlive())
     {
-        botAI->TellMasterNoFacing("I am not dead, will wait here");
-        botAI->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+        if (!bot->InBattleground())
+        {
+            botAI->TellMasterNoFacing("I am not dead, will wait here");
+            // -follow in bg is overwriten each tick with +follow
+            // +stay in bg causes stuttering effect as bot is cycled between +stay and +follow each tick
+            botAI->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+        }
+
         return false;
     }
 
@@ -31,12 +38,13 @@ bool ReleaseSpiritAction::Execute(Event event)
     }
 
     const WorldPacket& packet = event.getPacket();
-    const std::string message = !packet.empty() && packet.GetOpcode() == CMSG_REPOP_REQUEST 
-                                ? "Releasing..." 
+    const std::string message = !packet.empty() && packet.GetOpcode() == CMSG_REPOP_REQUEST
+                                ? "Releasing..."
                                 : "Meet me at the graveyard";
     botAI->TellMasterNoFacing(message);
 
     IncrementDeathCount();
+    bot->DurabilityRepairAll(false, 1.0f, false);
     LogRelease("released");
 
     WorldPacket releasePacket(CMSG_REPOP_REQUEST);
@@ -73,6 +81,7 @@ void ReleaseSpiritAction::LogRelease(const std::string& releaseMsg, bool isAutoR
 bool AutoReleaseSpiritAction::Execute(Event event)
 {
     IncrementDeathCount();
+    bot->DurabilityRepairAll(false, 1.0f, false);
     LogRelease("auto released", true);
 
     WorldPacket packet(CMSG_REPOP_REQUEST);
@@ -80,7 +89,7 @@ bool AutoReleaseSpiritAction::Execute(Event event)
     bot->GetSession()->HandleRepopRequestOpcode(packet);
 
     LogRelease("releases spirit", true);
-    
+
     if (bot->InBattleground())
     {
         return HandleBattlegroundSpiritHealer();
@@ -108,8 +117,8 @@ bool AutoReleaseSpiritAction::HandleBattlegroundSpiritHealer()
 {
     constexpr uint32_t RESURRECT_DELAY = 15;
     const time_t now = time(nullptr);
-    
-    if ((now - m_bgGossipTime < RESURRECT_DELAY) && 
+
+    if ((now - m_bgGossipTime < RESURRECT_DELAY) &&
         bot->HasAura(SPELL_WAITING_FOR_RESURRECT))
     {
         return false;
@@ -165,9 +174,9 @@ bool AutoReleaseSpiritAction::ShouldAutoRelease() const
     if (!botAI->HasActivePlayerMaster())
         return true;
 
-    if (botAI->HasActivePlayerMaster() && 
+    if (botAI->HasActivePlayerMaster() &&
         groupMaster->GetMapId() == bot->GetMapId() &&
-        bot->GetMap() && 
+        bot->GetMap() &&
         (bot->GetMap()->IsRaid() || bot->GetMap()->IsDungeon()))
     {
         return false;
@@ -209,7 +218,7 @@ bool AutoReleaseSpiritAction::ShouldDelayBattlegroundRelease() const
 bool RepopAction::Execute(Event event)
 {
     const GraveyardStruct* graveyard = GetGrave(
-        AI_VALUE(uint32, "death count") > 10 || 
+        AI_VALUE(uint32, "death count") > 10 ||
         CalculateDeadTime() > 30 * MINUTE
     );
 
@@ -229,7 +238,7 @@ int64 RepopAction::CalculateDeadTime() const
 {
     if (Corpse* corpse = bot->GetCorpse())
         return time(nullptr) - corpse->GetGhostTime();
-    
+
     return bot->isDead() ? 0 : 60 * MINUTE;
 }
 
@@ -238,4 +247,20 @@ void RepopAction::PerformGraveyardTeleport(const GraveyardStruct* graveyard) con
     bot->TeleportTo(graveyard->Map, graveyard->x, graveyard->y, graveyard->z, 0.f);
     RESET_AI_VALUE(bool, "combat::self target");
     RESET_AI_VALUE(WorldPosition, "current position");
+}
+
+// SelfResurrectAction implementation for Warlock's Soulstone Resurrection/Shaman's Reincarnation
+bool SelfResurrectAction::Execute(Event event)
+{
+    if (!bot->IsAlive() && bot->GetUInt32Value(PLAYER_SELF_RES_SPELL))
+    {
+        WorldPacket packet(CMSG_SELF_RES);
+        bot->GetSession()->HandleSelfResOpcode(packet);
+        return true;
+    }
+    return false;
+}
+bool SelfResurrectAction::isUseful()
+{
+    return !bot->IsAlive() && bot->GetUInt32Value(PLAYER_SELF_RES_SPELL);
 }

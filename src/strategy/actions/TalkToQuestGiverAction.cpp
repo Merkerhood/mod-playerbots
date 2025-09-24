@@ -102,7 +102,7 @@ void TalkToQuestGiverAction::RewardNoItem(Quest const* quest, Object* questGiver
 {
     std::map<std::string, std::string> args;
     args["%quest"] = chat->FormatQuest(quest);
-    
+
     if (bot->CanRewardQuest(quest, false))
     {
         out << BOT_TEXT2("quest_status_completed", args);
@@ -173,7 +173,6 @@ void TalkToQuestGiverAction::RewardMultipleItem(Quest const* quest, Object* ques
     std::ostringstream outid;
     if (!botAI->IsAlt() || sPlayerbotAIConfig->autoPickReward == "yes")
     {
-        // Pick the first item of the best rewards.
         bestIds = BestRewards(quest);
         if (!bestIds.empty())
         {
