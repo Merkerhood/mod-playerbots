@@ -1215,6 +1215,46 @@ std::vector<BattleBotPath*> const vPaths_IC = {
     &vPath_IC_Hanger_to_Workshop,
 };
 
+#ifdef BATTLEGROUND_WG
+// Minimal Wintergrasp paths to guide movement between key siege objectives
+// West approach (from western tower area toward the fortress gate)
+BattleBotPath vPath_WG_West_to_Gate = {
+    {4557.173f, 3623.943f, 395.883f, nullptr}, // Western tower area
+    {4700.000f, 3400.000f, 382.000f, nullptr},
+    {4900.000f, 3200.000f, 392.000f, nullptr},
+    {5050.000f, 3000.000f, 405.000f, nullptr},
+    {5162.991f, 2841.232f, 410.189f, nullptr}  // Fortress gate
+};
+
+// South approach (from southern tower area toward the fortress gate)
+BattleBotPath vPath_WG_South_to_Gate = {
+    {4398.172f, 2822.497f, 405.627f, nullptr}, // Southern tower area
+    {4650.000f, 2825.000f, 410.000f, nullptr},
+    {4900.000f, 2835.000f, 410.000f, nullptr},
+    {5162.991f, 2841.232f, 410.189f, nullptr}  // Fortress gate
+};
+
+// East approach (from eastern tower area toward the fortress gate)
+BattleBotPath vPath_WG_East_to_Gate = {
+    {4459.105f, 1944.326f, 434.991f, nullptr}, // Eastern tower area
+    {4700.000f, 2300.000f, 430.000f, nullptr},
+    {4950.000f, 2600.000f, 415.000f, nullptr},
+    {5100.000f, 2750.000f, 410.000f, nullptr},
+    {5162.991f, 2841.232f, 410.189f, nullptr}  // Fortress gate
+};
+
+// Inside keep: from gate area to Titan's Relic
+BattleBotPath vPath_WG_Gate_to_Relic = {
+    {5162.991f, 2841.232f, 410.189f, nullptr}, // Fortress gate
+    {5200.000f, 2840.000f, 418.000f, nullptr},
+    {5300.000f, 2840.000f, 425.000f, nullptr},
+    {5440.379f, 2840.493f, 430.282f, nullptr}  // Titan's Relic
+};
+
+std::vector<BattleBotPath*> const vPaths_WG = {&vPath_WG_West_to_Gate, &vPath_WG_South_to_Gate, &vPath_WG_East_to_Gate,
+                                               &vPath_WG_Gate_to_Relic};
+#endif
+
 std::vector<BattleBotPath*> const vPaths_NoReverseAllowed = {
     &vPath_WSG_AllianceGraveyardJump,
     &vPath_WSG_HordeGraveyardJump,
@@ -1639,8 +1679,8 @@ bool BGTactics::Execute(Event event)
 #ifdef BATTLEGROUND_WG
         case BATTLEGROUND_WG:
         {
-            // For now, no predefined waypoint paths; enable capture interactions via banners/relic
-            vPaths = nullptr;
+            // Enable minimal WG paths and capture interactions via banners/relic
+            vPaths = &vPaths_WG;
             vFlagIds = &vFlagsWG;
             break;
         }

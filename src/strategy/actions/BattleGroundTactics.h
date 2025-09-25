@@ -101,6 +101,9 @@ extern std::vector<BattleBotPath*> const vPaths_AB;
 extern std::vector<BattleBotPath*> const vPaths_AV;
 extern std::vector<BattleBotPath*> const vPaths_EY;
 extern std::vector<BattleBotPath*> const vPaths_IC;
+#ifdef BATTLEGROUND_WG
+extern std::vector<BattleBotPath*> const vPaths_WG;
+#endif
 
 class BGTactics : public MovementAction
 {
