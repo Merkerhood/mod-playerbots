@@ -4673,7 +4673,10 @@ bool WintergraspQueueAction::isUseful()
     if (!sRandomPlayerbotMgr->IsRandomBot(bot))
         return false;
 
-    if (!sPlayerbotAIConfig->randomBotAutoTravelWG)
+    if (!sPlayerbotAIConfig->randomBotJoinWG)
+        return false;
+
+    if (!sPlayerbotAIConfig->randomBotAutoJoinWGQueue)
         return false;
 
     if (bot->InBattleground() || bot->IsInCombat())
@@ -4712,6 +4715,9 @@ bool WintergraspQueueAction::Execute(Event /*event*/)
 bool WintergraspEnterWarAction::isUseful()
 {
     if (!sRandomPlayerbotMgr->IsRandomBot(bot))
+        return false;
+
+    if (!sPlayerbotAIConfig->randomBotJoinWG)
         return false;
 
     Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);

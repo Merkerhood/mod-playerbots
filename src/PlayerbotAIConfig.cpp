@@ -318,6 +318,8 @@ bool PlayerbotAIConfig::Initialize()
 
     randomBotJoinBG = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotJoinBG", true);
     randomBotAutoJoinBG = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotAutoJoinBG", false);
+    // Wintergrasp master toggle (similar to RandomBotJoinBG)
+    randomBotJoinWG = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotJoinWG", true);
     // Wintergrasp (Battlefield) queue participation
     randomBotAutoJoinWGQueue = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotAutoJoinWGQueue", true);
 
