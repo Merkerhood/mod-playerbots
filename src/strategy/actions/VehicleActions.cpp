@@ -13,6 +13,7 @@
 #include "ServerFacade.h"
 #include "Unit.h"
 #include "Vehicle.h"
+#include "BattlefieldMgr.h"
 
 // Wintergrasp rank auras (from TC 3.3.5 BattlefieldWG.h)
 static constexpr uint32 WG_SPELL_RECRUIT    = 37795;
@@ -88,15 +89,22 @@ bool EnterVehicleAction::Execute(Event event)
         if (vehicleBase->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
             continue;
 
-        // dont let them get in the cannons as they'll stay forever and do nothing useful
-        // allow catapult only in Wintergrasp, not in IoC
-        if (NPC_KEEP_CANNON == vehicleBase->GetEntry())
+        // dont let them get in IoC cannons; allow WG tower cannons for defenders
+        bool isWG = (bot->GetZoneId() == WG_ZONE_ID);
+        bool isWGDefender = false;
+        if (isWG)
+        {
+            if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WG_ZONE_ID))
+                isWGDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
+        }
+        uint32 entry = vehicleBase->GetEntry();
+        const uint32 WG_TOWER_CANNON_ENTRY = 28366; // NPC_WINTERGRASP_TOWER_CANNON
+        if (NPC_KEEP_CANNON == entry || (!isWGDefender && entry == WG_TOWER_CANNON_ENTRY))
             continue;
 
         // Enforce WG per-vehicle rank requirements when in WG
         if (inWG)
         {
-            uint32 entry = vehicleBase->GetEntry();
             if (!HasWGRankForVehicle(bot, entry))
                 continue;
         }

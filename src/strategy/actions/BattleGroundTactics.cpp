@@ -114,6 +114,12 @@ static Position const WG_TOWER_W_POS = {4557.173f, 3623.943f, 395.8828f, 1.67551
 static Position const WG_TOWER_S_POS = {4398.172f, 2822.497f, 405.6270f, -3.124123f};
 static Position const WG_TOWER_E_POS = {4459.105f, 1944.326f, 434.9912f, -2.002762f};
 
+// WG vehicle entries (Trinity 3.3.5)
+static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_A = 28312;
+static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_H = 32627;
+static constexpr uint32 WG_ENTRY_CATAPULT       = 27881;
+static constexpr uint32 WG_ENTRY_DEMOLISHER     = 28094;
+
 enum BattleBotWsgWaitSpot
 {
     BB_WSG_WAIT_SPOT_SPAWN,
@@ -1909,9 +1915,38 @@ bool BGTactics::moveToStart(bool force)
     #ifdef BATTLEGROUND_WG
     else if (bgType == BATTLEGROUND_WG)
     {
-        // Minimal WG: no fixed waiting positions to avoid bad coordinates.
-        // Keep position; vehicles/engagement handled by strategies.
-        return true;
+        // Spread bots across lanes before battle start to avoid zerging one spot.
+        // Determine defender via battlefield state; defenders stage near the gate, attackers spread to lanes.
+        bool isDefender = false;
+        if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197 /* Wintergrasp */))
+            isDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
+
+        uint32 role = context->GetValue<uint32>("bg role")->Get();
+
+        if (isDefender)
+        {
+            // Three defensive anchor points near the gate: left, center, right (with small random offset)
+            std::array<Position, 3> anchors = {
+                Position(WG_GATE_POS.GetPositionX() - 20.0f, WG_GATE_POS.GetPositionY() - 10.0f, WG_GATE_POS.GetPositionZ(), WG_GATE_POS.GetOrientation()),
+                Position(WG_GATE_POS.GetPositionX(),          WG_GATE_POS.GetPositionY(),          WG_GATE_POS.GetPositionZ(), WG_GATE_POS.GetOrientation()),
+                Position(WG_GATE_POS.GetPositionX() + 20.0f, WG_GATE_POS.GetPositionY() + 10.0f, WG_GATE_POS.GetPositionZ(), WG_GATE_POS.GetOrientation())
+            };
+
+            Position p = anchors[role % anchors.size()];
+            return MoveTo(bg->GetMapId(), p.GetPositionX() + frand(-5.0f, 5.0f), p.GetPositionY() + frand(-5.0f, 5.0f), p.GetPositionZ());
+        }
+        else
+        {
+            // Attackers take lanes: West / South / East based on role slice
+            Position lane = WG_TOWER_S_POS; // default south
+            uint32 slice = role % 3;
+            if (slice == 0)
+                lane = WG_TOWER_W_POS;
+            else if (slice == 2)
+                lane = WG_TOWER_E_POS;
+
+            return MoveTo(bg->GetMapId(), lane.GetPositionX() + frand(-8.0f, 8.0f), lane.GetPositionY() + frand(-8.0f, 8.0f), lane.GetPositionZ());
+        }
     }
     #endif
 
@@ -2313,6 +2348,35 @@ bool BGTactics::selectObjective(bool reset)
                 siege.Set(pos.x, pos.y, pos.z, pos.mapId);
                 posMap["bg siege"] = siege;
                 return true;
+            }
+
+            // Escort role: attackers with certain roles escort nearest friendly siege vehicle toward objective
+            if (!isDefender && (role % 4 == 3))
+            {
+                GuidVector nearby = AI_VALUE(GuidVector, "nearest vehicles");
+                Unit* best = nullptr;
+                float bestd = FLT_MAX;
+                for (ObjectGuid const& vg : nearby)
+                {
+                    Unit* v = botAI->GetUnit(vg);
+                    if (!v || !v->IsFriendlyTo(bot))
+                        continue;
+                    uint32 ve = v->GetEntry();
+                    if (ve != WG_ENTRY_SIEGE_ENGINE_A && ve != WG_ENTRY_SIEGE_ENGINE_H && ve != WG_ENTRY_CATAPULT && ve != WG_ENTRY_DEMOLISHER)
+                        continue;
+                    float d = bot->GetDistance(v);
+                    if (d < bestd)
+                    {
+                        bestd = d;
+                        best = v;
+                    }
+                }
+                if (best && bestd < 150.0f)
+                {
+                    pos.Set(best->GetPositionX(), best->GetPositionY(), best->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
             }
 
             // Choose a siege objective based on role and (approx) attacker/defender
