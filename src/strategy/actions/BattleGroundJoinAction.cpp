@@ -457,35 +457,35 @@ bool BGJoinAction::JoinQueue(uint32 type)
     // in wotlk only arena requires battlemaster guid
     // ObjectGuid guid = isArena ? unit->GetGUID() : bot->GetGUID(); //not used, line marked for removal.
 
-        switch (bgTypeId)
-        {
-            case BATTLEGROUND_AV:
-                _bgType = "AV";
-                break;
-            case BATTLEGROUND_WS:
-                _bgType = "WSG";
-                break;
-            case BATTLEGROUND_AB:
-                _bgType = "AB";
-                break;
-            case BATTLEGROUND_EY:
-                _bgType = "EotS";
-                break;
-            case BATTLEGROUND_RB:
-                _bgType = "Random";
-                break;
-            case BATTLEGROUND_SA:
-                _bgType = "SotA";
-                break;
-            case BATTLEGROUND_IC:
-                _bgType = "IoC";
-                break;
-            case BATTLEGROUND_WG:
-                _bgType = "WG";
-                break;
-            default:
-                break;
-        }
+    switch (bgTypeId)
+    {
+        case BATTLEGROUND_AV:
+            _bgType = "AV";
+            break;
+        case BATTLEGROUND_WS:
+            _bgType = "WSG";
+            break;
+        case BATTLEGROUND_AB:
+            _bgType = "AB";
+            break;
+        case BATTLEGROUND_EY:
+            _bgType = "EotS";
+            break;
+        case BATTLEGROUND_RB:
+            _bgType = "Random";
+            break;
+        case BATTLEGROUND_SA:
+            _bgType = "SotA";
+            break;
+        case BATTLEGROUND_IC:
+            _bgType = "IoC";
+            break;
+        case BATTLEGROUND_WG:
+            _bgType = "WG";
+            break;
+        default:
+            break;
+    }
 
     if (isArena)
     {
