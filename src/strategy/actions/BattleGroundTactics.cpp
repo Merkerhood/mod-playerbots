@@ -1994,7 +1994,7 @@ bool BGTactics::selectObjective(bool reset)
             isDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
 
         // Try to push siege objectives; fall back to local PvP
-        // Gate push if friendly vehicles are massed
+        // Gate push if friendly vehicles are massed (with some randomness to choose a side breach)
         {
             GuidVector nearbyVehicles = AI_VALUE(GuidVector, "nearest vehicles");
             uint32 friendlyAtGate = 0;
@@ -2008,10 +2008,21 @@ bool BGTactics::selectObjective(bool reset)
             }
             if (friendlyAtGate >= 2)
             {
-                PositionInfo& siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
-                pos.Set(WG_GATE_POS.GetPositionX(), WG_GATE_POS.GetPositionY(), WG_GATE_POS.GetPositionZ(), bot->GetMapId());
+                // 25% chance to breach via a side lane instead of the main gate, to avoid predictable zergs
+                uint32 role = context->GetValue<uint32>("bg role")->Get();
+                bool sideBreach = urand(0, 99) < 25;
+                if (!sideBreach)
+                {
+                    PositionInfo& siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
+                    pos.Set(WG_GATE_POS.GetPositionX(), WG_GATE_POS.GetPositionY(), WG_GATE_POS.GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    siege.Set(pos.x, pos.y, pos.z, pos.mapId);
+                    return true;
+                }
+                // choose a side tower as breach point based on role
+                Position breach = (role % 2 == 0 ? WG_TOWER_W_POS : WG_TOWER_E_POS);
+                pos.Set(breach.GetPositionX(), breach.GetPositionY(), breach.GetPositionZ(), bot->GetMapId());
                 posMap["bg objective"] = pos;
-                siege.Set(pos.x, pos.y, pos.z, pos.mapId);
                 return true;
             }
         }
