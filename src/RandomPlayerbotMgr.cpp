@@ -52,6 +52,8 @@
 #include "Unit.h"
 #include "UpdateTime.h"
 #include "World.h"
+#include "BattlefieldMgr.h"
+#include "Battlefield.h"
 
 struct GuidClassRaceInfo
 {
@@ -456,6 +458,13 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool /*minimal*/)
     {
         if (time(nullptr) > (BgCheckTimer + 35))
             sRandomPlayerbotMgr->CheckBgQueue();
+    }
+
+    // Fill Wintergrasp during wartime when a real player is present, up to 40 per team
+    if (sPlayerbotAIConfig->randomBotJoinWG)
+    {
+        if (time(nullptr) > (WGCheckTimer + 5))
+            sRandomPlayerbotMgr->CheckWGFill();
     }
 
     if (sPlayerbotAIConfig->randomBotJoinLfg /* && !players.empty()*/)
@@ -1359,6 +1368,107 @@ void RandomPlayerbotMgr::CheckLfgQueue()
     }
 
     LOG_DEBUG("playerbots", "LFG Queue check finished");
+}
+
+void RandomPlayerbotMgr::CheckWGFill()
+{
+    if (!WGCheckTimer)
+    {
+        WGCheckTimer = time(nullptr);
+        return;
+    }
+
+    WGCheckTimer = time(nullptr);
+
+    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197 /* Wintergrasp */);
+    if (!bf)
+        return;
+
+    if (!bf->IsWarTime())
+        return;
+
+    // Count real players and bots currently in WG zone by team
+    uint32 realInWG[2] = {0, 0};
+    uint32 botInWG[2] = {0, 0};
+
+    for (Player* p : players)
+    {
+        if (!p || !p->IsInWorld())
+            continue;
+        if (p->GetZoneId() != 4197)
+            continue;
+
+        TeamId t = p->GetTeamId();
+        if (sRandomPlayerbotMgr->IsRandomBot(p))
+            ++botInWG[t];
+        else
+            ++realInWG[t];
+    }
+
+    // Only fill if at least one real player is present on any side
+    if (realInWG[TEAM_ALLIANCE] == 0 && realInWG[TEAM_HORDE] == 0)
+        return;
+
+    // desired cap per team from worldserver config (same value BattlefieldWG uses)
+    const uint32 teamCap = sWorld->getIntConfig(CONFIG_WINTERGRASP_PLR_MAX);
+
+    // WG level bracket (default 79-80)
+    uint32 minLevel = 79;
+    auto it = zone2LevelBracket.find(4197);
+    if (it != zone2LevelBracket.end())
+        minLevel = it->second.low;
+
+    // Build eligible bot lists per team
+    std::vector<Player*> eligible[2];
+    for (Player* p : players)
+    {
+        if (!p || !p->IsInWorld())
+            continue;
+        if (!sRandomPlayerbotMgr->IsRandomBot(p))
+            continue;
+        if (p->GetLevel() < minLevel)
+            continue;
+        if (p->InBattleground())
+            continue;
+        if (p->GetZoneId() == 4197)
+            continue; // already in WG
+
+        eligible[p->GetTeamId()].push_back(p);
+    }
+
+    auto inviteTeam = [&](TeamId team)
+    {
+        uint32 current = realInWG[team] + botInWG[team];
+        if (current >= teamCap)
+            return;
+        uint32 need = teamCap - current;
+
+        uint32 invited = 0;
+        // randomize selection to spread load
+        std::shuffle(eligible[team].begin(), eligible[team].end(), *GetRandomGenerator());
+        for (Player* b : eligible[team])
+        {
+            if (!b || !b->IsInWorld())
+                continue;
+
+            bf->PlayerAcceptInviteToWar(b);
+            ++invited;
+            if (invited >= need)
+                break;
+        }
+
+        if (invited)
+        {
+            LOG_INFO("playerbots", "WG fill: invited {} bots for {} (real={}, bots={}, cap={})", invited,
+                     team == TEAM_ALLIANCE ? "Alliance" : "Horde", realInWG[team], botInWG[team], teamCap);
+        }
+    };
+
+    LOG_DEBUG("playerbots", "WG fill check: A(real={}, bots={}) H(real={}, bots={})", realInWG[TEAM_ALLIANCE],
+              botInWG[TEAM_ALLIANCE], realInWG[TEAM_HORDE], botInWG[TEAM_HORDE]);
+
+    inviteTeam(TEAM_ALLIANCE);
+    inviteTeam(TEAM_HORDE);
 }
 
 void RandomPlayerbotMgr::CheckPlayers()
