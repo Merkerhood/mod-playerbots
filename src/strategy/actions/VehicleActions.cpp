@@ -95,15 +95,25 @@ bool EnterVehicleAction::Execute(Event event)
     if (isWG)
     {
         if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WG_ZONE_ID))
+        {
+            // Do not enter vehicles during WG preparation (no wartime)
+            if (!bf->IsWarTime())
+                return false;
+
             isWGDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
 
-        if (isWGDefender)
-        {
-            if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
+            if (isWGDefender)
             {
-                float dGateEnemy = enemy->GetDistance(WG_GATE_X, WG_GATE_Y, WG_GATE_Z);
-                preferCannons = (dGateEnemy < 250.0f);
+                if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
+                {
+                    float dGateEnemy = enemy->GetDistance(WG_GATE_X, WG_GATE_Y, WG_GATE_Z);
+                    preferCannons = (dGateEnemy < 250.0f);
+                }
             }
+        }
+        else
+        {
+            return false; // no battlefield context, avoid vehicles in WG zone
         }
     }
 
