@@ -170,6 +170,17 @@ std::vector<uint32> const vFlagsIC = {GO_HORDE_BANNER,
                                       GO_HORDE_BANNER_GRAVEYARD_H,
                                       GO_HORDE_BANNER_GRAVEYARD_H_CONT};
 
+// Wintergrasp capture/interaction objects (Trinity 3.3.5 IDs)
+// - Factory banners: capture points for workshops
+// - Titan's Relic: game-ending interactable for attackers
+std::vector<uint32> const vFlagsWG = {
+    190475, // GO_WINTERGRASP_FACTORY_BANNER_NE
+    190487, // GO_WINTERGRASP_FACTORY_BANNER_NW
+    194959, // GO_WINTERGRASP_FACTORY_BANNER_SE
+    194962, // GO_WINTERGRASP_FACTORY_BANNER_SW
+    192829  // GO_WINTERGRASP_TITAN_S_RELIC
+};
+
 // BG Waypoints (vmangos)
 
 // Horde Flag Room to Horde Graveyard
@@ -1618,10 +1629,9 @@ bool BGTactics::Execute(Event event)
 #ifdef BATTLEGROUND_WG
         case BATTLEGROUND_WG:
         {
-            // Minimal Wintergrasp stub: no predefined paths/flags here.
-            // Strategy and vehicle usage are handled by WintergraspStrategy triggers.
+            // For now, no predefined waypoint paths; enable capture interactions via banners/relic
             vPaths = nullptr;
-            vFlagIds = nullptr;
+            vFlagIds = &vFlagsWG;
             break;
         }
 #endif
@@ -1680,7 +1690,7 @@ bool BGTactics::Execute(Event event)
                 return true;
         }
 
-        if (vPaths && vFlagIds && atFlag(*vPaths, *vFlagIds))
+        if (vFlagIds && atFlag(vPaths ? *vPaths : std::vector<BattleBotPath*>{}, *vFlagIds))
             return true;
 
         if (useBuff())
@@ -3621,6 +3631,9 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         case BATTLEGROUND_AV:
         case BATTLEGROUND_AB:
         case BATTLEGROUND_IC:
+#ifdef BATTLEGROUND_WG
+        case BATTLEGROUND_WG:
+#endif
         {
             // For territory control BGs, use standard interaction range
             closeObjects = *context->GetValue<GuidVector>("closest game objects");
@@ -3774,7 +3787,27 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             case BATTLEGROUND_AV:
             case BATTLEGROUND_AB:
             case BATTLEGROUND_IC:
+#ifdef BATTLEGROUND_WG
+            case BATTLEGROUND_WG:
+#endif
             {
+                // Special WG handling: Titan's Relic is a direct-use GO
+                if (go->GetEntry() == 192829) // GO_WINTERGRASP_TITAN_S_RELIC
+                {
+                    if (dist < INTERACTION_DISTANCE)
+                    {
+                        WorldPacket data(CMSG_GAMEOBJ_USE);
+                        data << go->GetGUID();
+                        bot->GetSession()->HandleGameObjectUseOpcode(data);
+                        resetObjective();
+                        return true;
+                    }
+                    else
+                    {
+                        return MoveTo(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+                    }
+                }
+
                 // Prevent capturing from inside flag pole
                 if (dist == 0.0f)
                 {

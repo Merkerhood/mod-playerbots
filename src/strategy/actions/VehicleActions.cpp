@@ -14,6 +14,12 @@
 #include "Unit.h"
 #include "Vehicle.h"
 
+// Wintergrasp rank auras (from TC 3.3.5 BattlefieldWG.h)
+static constexpr uint32 WG_SPELL_RECRUIT    = 37795;
+static constexpr uint32 WG_SPELL_CORPORAL   = 33280;
+static constexpr uint32 WG_SPELL_LIEUTENANT = 55629;
+static constexpr uint32 WG_ZONE_ID          = 4197; // Wintergrasp Zone
+
 // TODO methods to enter/exit vehicle should be added to BGTactics or MovementAction (so that we can better control
 // whether bot is in vehicle, eg: get out of vehicle to cap flag, if we're down to final boss, etc),
 // right now they will enter vehicle based only what's available here, then they're stuck in vehicle until they die
@@ -23,6 +29,14 @@ bool EnterVehicleAction::Execute(Event event)
     // do not switch vehicles yet
     if (bot->GetVehicle())
         return false;
+
+    // In Wintergrasp, require rank aura before entering vehicles
+    if (bot->GetZoneId() == WG_ZONE_ID)
+    {
+        bool hasRank = bot->HasAura(WG_SPELL_RECRUIT) || bot->HasAura(WG_SPELL_CORPORAL) || bot->HasAura(WG_SPELL_LIEUTENANT);
+        if (!hasRank)
+            return false;
+    }
 
     Player* master = botAI->GetMaster();
     // Triggered by a chat command
