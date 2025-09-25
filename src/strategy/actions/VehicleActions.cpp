@@ -90,9 +90,8 @@ bool EnterVehicleAction::Execute(Event event)
 
     // Prefer tower cannons for defenders when enemies are attacking near the fortress gate
     bool preferCannons = false;
-    bool isWG = (bot->GetZoneId() == WG_ZONE_ID);
     bool isWGDefender = false;
-    if (isWG)
+    if (inWG)
     {
         if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WG_ZONE_ID))
         {
