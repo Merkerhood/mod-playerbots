@@ -480,9 +480,7 @@ bool BGJoinAction::JoinQueue(uint32 type)
         case BATTLEGROUND_IC:
             _bgType = "IoC";
             break;
-        case BATTLEGROUND_WG:
-            _bgType = "WG";
-            break;
+        // WG is Battlefield on AC; no BG id mapping here
         default:
             break;
     }
@@ -857,9 +855,7 @@ bool BGStatusAction::Execute(Event event)
         case BATTLEGROUND_IC:
             _bgType = "IoC";
             break;
-        case BATTLEGROUND_WG:
-            _bgType = "WG";
-            break;
+        // WG is Battlefield on AC; no BG id mapping here
         default:
             break;
     }
