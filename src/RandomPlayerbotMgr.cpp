@@ -1444,8 +1444,8 @@ void RandomPlayerbotMgr::CheckWGFill()
         uint32 need = teamCap - current;
 
         uint32 invited = 0;
-        // randomize selection to spread load
-        std::shuffle(eligible[team].begin(), eligible[team].end(), *GetRandomGenerator());
+        // randomize selection to spread load (use our global RandomEngine)
+        std::shuffle(eligible[team].begin(), eligible[team].end(), RandomEngine::Instance());
         for (Player* b : eligible[team])
         {
             if (!b || !b->IsInWorld())
