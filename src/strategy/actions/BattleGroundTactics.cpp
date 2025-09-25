@@ -4623,6 +4623,9 @@ bool WintergraspTravelAction::isUseful()
     if (!sRandomPlayerbotMgr->IsRandomBot(bot))
         return false;
 
+    if (!sPlayerbotAIConfig->randomBotJoinWG)
+        return false;
+
     if (bot->InBattleground() || bot->IsInCombat())
         return false;
 

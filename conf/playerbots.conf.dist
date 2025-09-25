@@ -1090,6 +1090,10 @@ AiPlayerbot.RandomBotJoinWG = 1
 # This simulates queuing via the Dalaran WG battlemage/gossip and fills teams when players join.
 # Default: 1 (enabled)
 AiPlayerbot.RandomBotAutoJoinWGQueue = 0
+# Note: AiPlayerbot.RandomBotAutoJoinWGQueue takes effect only when
+# AiPlayerbot.RandomBotJoinWG = 1. When both are enabled, random bots may
+# queue for WG on their own. When only RandomBotJoinWG is enabled, bots will
+# fill when real players have queued and the battle is underway.
 
 # Required Configuration for RandomBotAutoJoinBG
 #
