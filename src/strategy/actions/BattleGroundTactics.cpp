@@ -2067,6 +2067,44 @@ bool BGTactics::selectObjective(bool reset)
                     case 1: strike = WG_TOWER_S_POS; break;
                     case 2: strike = WG_TOWER_E_POS; break;
                 }
+
+                // Prefer pushing towers with vehicles. If already in a vehicle, go straight to strike.
+                if (bot->GetVehicle())
+                {
+                    pos.Set(strike.GetPositionX(), strike.GetPositionY(), strike.GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
+
+                // Seek nearest friendly vehicle suitable for a strike (Siege Engine / Demolisher)
+                Unit* bestVeh = nullptr;
+                float bestDist = FLT_MAX;
+                GuidVector nearVeh = AI_VALUE(GuidVector, "nearest vehicles");
+                for (ObjectGuid const& vg : nearVeh)
+                {
+                    Unit* v = botAI->GetUnit(vg);
+                    if (!v || !v->IsFriendlyTo(bot))
+                        continue;
+                    uint32 ve = v->GetEntry();
+                    if (ve != WG_ENTRY_SIEGE_ENGINE_A && ve != WG_ENTRY_SIEGE_ENGINE_H && ve != WG_ENTRY_DEMOLISHER)
+                        continue;
+                    float d = bot->GetDistance(v);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        bestVeh = v;
+                    }
+                }
+
+                if (bestVeh)
+                {
+                    // Move to vehicle; EnterVehicleAction will handle boarding if seats are available
+                    pos.Set(bestVeh->GetPositionX(), bestVeh->GetPositionY(), bestVeh->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
+
+                // Fallback: move to tower on foot
                 pos.Set(strike.GetPositionX(), strike.GetPositionY(), strike.GetPositionZ(), bot->GetMapId());
                 posMap["bg objective"] = pos;
                 return true;
