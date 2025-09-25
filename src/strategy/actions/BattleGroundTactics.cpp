@@ -2289,6 +2289,34 @@ bool BGTactics::selectObjective(bool reset)
                 }
             }
 
+            // As defender: intercept nearest enemy vehicle first
+            if (isDefender)
+            {
+                GuidVector vehs = AI_VALUE(GuidVector, "nearest vehicles");
+                Unit* enemyVeh = nullptr;
+                float evDist = FLT_MAX;
+                for (ObjectGuid const& vg : vehs)
+                {
+                    Unit* v = botAI->GetUnit(vg);
+                    if (!v || v->IsFriendlyTo(bot))
+                        continue;
+                    float d = bot->GetDistance(v);
+                    if (d < evDist)
+                    {
+                        evDist = d;
+                        enemyVeh = v;
+                    }
+                }
+                if (enemyVeh && evDist < 250.0f)
+                {
+                    // Set the vehicle as objective and target
+                    pos.Set(enemyVeh->GetPositionX(), enemyVeh->GetPositionY(), enemyVeh->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    context->GetValue<Unit*>("current target")->Set(enemyVeh);
+                    return true;
+                }
+            }
+
             // Prefer nearby banners (workshops) first if visible
             GuidVector noLosObjects = AI_VALUE(GuidVector, "nearest game objects no los");
             GameObject* nearestBanner = nullptr;
@@ -2379,7 +2407,7 @@ bool BGTactics::selectObjective(bool reset)
                 }
             }
 
-            // Choose a siege objective based on role and (approx) attacker/defender
+            // Choose a siege objective based on role and attacker/defender
             Position siegeTarget = WG_GATE_POS;
             if (!isDefender)
             {
@@ -2399,7 +2427,17 @@ bool BGTactics::selectObjective(bool reset)
                     siegeTarget = (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_E_POS : WG_TOWER_W_POS);
             }
 
-            pos.Set(siegeTarget.GetPositionX(), siegeTarget.GetPositionY(), siegeTarget.GetPositionZ(), bot->GetMapId());
+            // Slight flanking for melee defenders at gate to avoid clogging the chokepoint
+            if (isDefender && siegeTarget.GetPositionX() == WG_GATE_POS.GetPositionX() && !botAI->IsRanged(bot))
+            {
+                float ox = (role % 2 == 0 ? -12.0f : 12.0f);
+                float oy = (role % 3 == 0 ? -6.0f : 6.0f);
+                pos.Set(WG_GATE_POS.GetPositionX() + ox, WG_GATE_POS.GetPositionY() + oy, WG_GATE_POS.GetPositionZ(), bot->GetMapId());
+            }
+            else
+            {
+                pos.Set(siegeTarget.GetPositionX(), siegeTarget.GetPositionY(), siegeTarget.GetPositionZ(), bot->GetMapId());
+            }
             posMap["bg objective"] = pos;
 
             // Also set siege aim position to help vehicle spells pick a destination
