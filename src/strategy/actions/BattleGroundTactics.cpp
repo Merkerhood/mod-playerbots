@@ -2241,8 +2241,11 @@ bool BGTactics::selectObjective(bool reset)
                     continue;
                 if (go->GetEntry() == 192829) // Relic handled below
                     continue;
+
+                // Prefer banners that are capturable for our team (enemy or neutral); fallback to proximity
+                bool canUse = bot->CanUseBattlegroundObject(go);
                 float d = bot->GetDistance(go);
-                if (d < bestBannerDist)
+                if ((canUse && d < bestBannerDist) || (!nearestBanner && d < bestBannerDist))
                 {
                     bestBannerDist = d;
                     nearestBanner = go;
