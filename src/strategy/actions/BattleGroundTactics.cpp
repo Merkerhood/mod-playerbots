@@ -4697,7 +4697,7 @@ bool WintergraspQueueAction::isUseful()
     auto it = sRandomPlayerbotMgr->zone2LevelBracket.find(4197);
     if (it != sRandomPlayerbotMgr->zone2LevelBracket.end())
     {
-        uint32 minL = it->second.first;
+        uint32 minL = it->second.low;
         if (bot->GetLevel() < minL)
             return false;
     }
