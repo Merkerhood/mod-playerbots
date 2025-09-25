@@ -380,6 +380,26 @@ bool BGJoinAction::isUseful()
         }
     }
 
+#ifdef BATTLEGROUND_WG
+    // Prefer Wintergrasp if it is available among eligible queues
+    if (!bgList.empty())
+    {
+        std::vector<uint32> prioritized;
+        prioritized.reserve(bgList.size());
+        for (uint32 q : bgList)
+        {
+            if (BattlegroundMgr::BGTemplateId((BattlegroundQueueTypeId)q) == BATTLEGROUND_WG)
+                prioritized.push_back(q);
+        }
+        for (uint32 q : bgList)
+        {
+            if (BattlegroundMgr::BGTemplateId((BattlegroundQueueTypeId)q) != BATTLEGROUND_WG)
+                prioritized.push_back(q);
+        }
+        bgList.swap(prioritized);
+    }
+#endif
+
     if (!bgList.empty())
         return true;
 
