@@ -2043,6 +2043,36 @@ bool BGTactics::selectObjective(bool reset)
             }
         }
 
+        // Defenders: if gate pressure is low, send strike teams to attacker towers to weaken attackers
+        if (isDefender)
+        {
+            GuidVector vehs = AI_VALUE(GuidVector, "nearest vehicles");
+            uint32 enemyAtGate = 0;
+            for (ObjectGuid const& vg : vehs)
+            {
+                Unit* v = botAI->GetUnit(vg);
+                if (!v || v->IsFriendlyTo(bot))
+                    continue;
+                if (v->GetDistance(WG_GATE_POS) < 200.0f)
+                    enemyAtGate++;
+            }
+
+            if (enemyAtGate < 2)
+            {
+                uint32 role = context->GetValue<uint32>("bg role")->Get();
+                Position strike = WG_TOWER_S_POS;
+                switch (role % 3)
+                {
+                    case 0: strike = WG_TOWER_W_POS; break;
+                    case 1: strike = WG_TOWER_S_POS; break;
+                    case 2: strike = WG_TOWER_E_POS; break;
+                }
+                pos.Set(strike.GetPositionX(), strike.GetPositionY(), strike.GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+        }
+
         // Prefer nearby banners that are capturable
         {
             GuidVector noLosObjects = AI_VALUE(GuidVector, "nearest game objects no los");
