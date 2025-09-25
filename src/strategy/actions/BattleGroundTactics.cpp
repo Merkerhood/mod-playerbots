@@ -1982,7 +1982,7 @@ bool BGTactics::selectObjective(bool reset)
 
     WorldObject* BgObjective = nullptr;
 
-    BattlegroundTypeId bgType = bot->GetBattlegroundTypeId();
+    BattlegroundTypeId bgType = bg ? bg->GetBgTypeID() : BATTLEGROUND_TYPE_NONE;
     if (bg && bgType == BATTLEGROUND_RB)
         bgType = bg->GetBgTypeID(true);
 
