@@ -4624,13 +4624,22 @@ bool WintergraspTravelAction::isUseful()
         return false;
 
     if (!sPlayerbotAIConfig->randomBotJoinWG)
+    {
+        LOG_DEBUG("playerbots", "WG travel gated: randomBotJoinWG=0 for bot {}", bot->GetName());
         return false;
+    }
 
     if (bot->InBattleground() || bot->IsInCombat())
+    {
+        LOG_DEBUG("playerbots", "WG travel gated: InBattleground={} InCombat={} for bot {}", bot->InBattleground(), bot->IsInCombat(), bot->GetName());
         return false;
+    }
 
     if (bot->GetZoneId() == 4197) // already in WG
+    {
+        LOG_DEBUG("playerbots", "WG travel gated: already in WG zone for bot {}", bot->GetName());
         return false;
+    }
 
     if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
     {
@@ -4638,6 +4647,7 @@ bool WintergraspTravelAction::isUseful()
         return true;
     }
 
+    LOG_DEBUG("playerbots", "WG travel gated: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
     return false;
 }
 
@@ -4677,21 +4687,36 @@ bool WintergraspQueueAction::isUseful()
         return false;
 
     if (!sPlayerbotAIConfig->randomBotJoinWG)
+    {
+        LOG_DEBUG("playerbots", "WG queue gated: randomBotJoinWG=0 for bot {}", bot->GetName());
         return false;
+    }
 
     if (!sPlayerbotAIConfig->randomBotAutoJoinWGQueue)
+    {
+        LOG_DEBUG("playerbots", "WG queue gated: randomBotAutoJoinWGQueue=0 for bot {}", bot->GetName());
         return false;
+    }
 
     if (bot->InBattleground() || bot->IsInCombat())
+    {
+        LOG_DEBUG("playerbots", "WG queue gated: InBattleground={} InCombat={} for bot {}", bot->InBattleground(), bot->IsInCombat(), bot->GetName());
         return false;
+    }
 
     Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);
     if (!bf)
+    {
+        LOG_DEBUG("playerbots", "WG queue gated: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
         return false;
+    }
 
     // Queue only before wartime
     if (bf->IsWarTime())
+    {
+        LOG_DEBUG("playerbots", "WG queue gated: wartime already active for bot {}", bot->GetName());
         return false;
+    }
 
     // Simple level gate: respect WG bracket (default 79-80)
     auto it = sRandomPlayerbotMgr->zone2LevelBracket.find(4197);
@@ -4699,7 +4724,10 @@ bool WintergraspQueueAction::isUseful()
     {
         uint32 minL = it->second.low;
         if (bot->GetLevel() < minL)
+        {
+            LOG_DEBUG("playerbots", "WG queue gated: level {} below bracket low {} for bot {}", bot->GetLevel(), minL, bot->GetName());
             return false;
+        }
     }
 
     return true;
@@ -4710,8 +4738,10 @@ bool WintergraspQueueAction::Execute(Event /*event*/)
     if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
     {
         bf->PlayerAcceptInviteToQueue(bot);
+        LOG_INFO("playerbots", "Bot {} queued for Wintergrasp", bot->GetName());
         return true;
     }
+    LOG_DEBUG("playerbots", "WG queue Execute: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
     return false;
 }
 
@@ -4721,19 +4751,31 @@ bool WintergraspEnterWarAction::isUseful()
         return false;
 
     if (!sPlayerbotAIConfig->randomBotJoinWG)
+    {
+        LOG_DEBUG("playerbots", "WG enter gated: randomBotJoinWG=0 for bot {}", bot->GetName());
         return false;
+    }
 
     Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);
     if (!bf)
+    {
+        LOG_DEBUG("playerbots", "WG enter gated: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
         return false;
+    }
 
     // Only when war time is active
     if (!bf->IsWarTime())
+    {
+        LOG_DEBUG("playerbots", "WG enter gated: not wartime for bot {}", bot->GetName());
         return false;
+    }
 
     // If already in Wintergrasp map/zone, no need
     if (bot->GetZoneId() == 4197)
+    {
+        LOG_DEBUG("playerbots", "WG enter gated: already in WG zone for bot {}", bot->GetName());
         return false;
+    }
 
     // If auto-join queue is disabled, only fill when real players joined (present in WG)
     if (!sPlayerbotAIConfig->randomBotAutoJoinWGQueue)
@@ -4741,6 +4783,7 @@ bool WintergraspEnterWarAction::isUseful()
         std::shared_lock<std::shared_mutex> lock(*HashMapHolder<Player>::GetLock());
         HashMapHolder<Player>::MapType const& m = ObjectAccessor::GetPlayers();
         bool realPresent = false;
+        uint32 realCount = 0;
         for (auto const& pair : m)
         {
             Player* plr = pair.second;
@@ -4751,10 +4794,18 @@ bool WintergraspEnterWarAction::isUseful()
             if (sRandomPlayerbotMgr->IsRandomBot(plr))
                 continue; // skip bots
             realPresent = true;
+            ++realCount;
             break;
         }
         if (!realPresent)
+        {
+            LOG_DEBUG("playerbots", "WG enter gated: no real players in WG zone; bot {} will wait", bot->GetName());
             return false;
+        }
+        else
+        {
+            LOG_DEBUG("playerbots", "WG enter ok: {} real players detected in WG zone; bot {} may fill", realCount, bot->GetName());
+        }
     }
 
     return true;
@@ -4765,8 +4816,10 @@ bool WintergraspEnterWarAction::Execute(Event /*event*/)
     if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
     {
         bf->PlayerAcceptInviteToWar(bot);
+        LOG_INFO("playerbots", "Bot {} forced entry into Wintergrasp war", bot->GetName());
         return true;
     }
+    LOG_DEBUG("playerbots", "WG enter Execute: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
     return false;
 }
 
