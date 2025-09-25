@@ -13,6 +13,7 @@ class ChatHandler;
 class Battleground;
 class PlayerbotAI;
 struct Position;
+class GameObject;
 
 #define SPELL_CAPTURE_BANNER 21651
 
@@ -132,6 +133,7 @@ private:
     bool useBuff();
     uint32 getPlayersInArea(TeamId teamId, Position point, float range, bool combat = true);
     bool IsLockedInsideKeep();
+    bool handleWGTitansRelic(GameObject* go, float dist);
 };
 
 class ArenaTactics : public MovementAction

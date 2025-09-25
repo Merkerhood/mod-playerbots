@@ -3755,6 +3755,23 @@ bool BGTactics::resetObjective()
     return selectObjective(true);
 }
 
+bool BGTactics::handleWGTitansRelic(GameObject* go, float dist)
+{
+    if (!go || go->GetEntry() != 192829)
+        return false;
+
+    if (dist < INTERACTION_DISTANCE)
+    {
+        WorldPacket data(CMSG_GAMEOBJ_USE);
+        data << go->GetGUID();
+        bot->GetSession()->HandleGameObjectUseOpcode(data);
+        resetObjective();
+        return true;
+    }
+
+    return MoveTo(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+}
+
 bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse)
 {
     if (!currentPath)
@@ -4099,21 +4116,8 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (isWGZone)
         {
             // Special WG handling: Titan's Relic is a direct-use GO
-            if (go->GetEntry() == 192829) // GO_WINTERGRASP_TITAN_S_RELIC
-            {
-                if (dist < INTERACTION_DISTANCE)
-                {
-                    WorldPacket data(CMSG_GAMEOBJ_USE);
-                    data << go->GetGUID();
-                    bot->GetSession()->HandleGameObjectUseOpcode(data);
-                    resetObjective();
-                    return true;
-                }
-                else
-                {
-                    return MoveTo(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
-                }
-            }
+            if (handleWGTitansRelic(go, dist))
+                return true;
 
             // Prevent capturing from inside flag pole
             if (dist == 0.0f)
@@ -4151,21 +4155,8 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             case BATTLEGROUND_IC:
             {
                 // Special WG handling: Titan's Relic is a direct-use GO
-                if (go->GetEntry() == 192829) // GO_WINTERGRASP_TITAN_S_RELIC
-                {
-                    if (dist < INTERACTION_DISTANCE)
-                    {
-                        WorldPacket data(CMSG_GAMEOBJ_USE);
-                        data << go->GetGUID();
-                        bot->GetSession()->HandleGameObjectUseOpcode(data);
-                        resetObjective();
-                        return true;
-                    }
-                    else
-                    {
-                        return MoveTo(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
-                    }
-                }
+                if (handleWGTitansRelic(go, dist))
+                    return true;
 
                 // Prevent capturing from inside flag pole
                 if (dist == 0.0f)

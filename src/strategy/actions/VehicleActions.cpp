@@ -66,8 +66,8 @@ bool EnterVehicleAction::Execute(Event event)
         return false;
 
     // In Wintergrasp, require rank aura before entering vehicles
-    bool inWG = (bot->GetZoneId() == WG_ZONE_ID);
-    if (inWG && !HasWGRankAtLeast(bot))
+    bool isInWG = (bot->GetZoneId() == WG_ZONE_ID);
+    if (isInWG && !HasWGRankAtLeast(bot))
         return false;
 
     Player* master = botAI->GetMaster();
@@ -90,7 +90,7 @@ bool EnterVehicleAction::Execute(Event event)
     // Prefer tower cannons for defenders when enemies are attacking near the fortress gate
     bool preferCannons = false;
     bool isWGDefender = false;
-    if (inWG)
+    if (isInWG)
     {
         if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WG_ZONE_ID))
         {
@@ -159,7 +159,7 @@ bool EnterVehicleAction::Execute(Event event)
             continue;
 
         // Enforce WG per-vehicle rank requirements when in WG
-        if (inWG)
+        if (isInWG)
         {
             if (!HasWGRankForVehicle(bot, entry))
                 continue;
