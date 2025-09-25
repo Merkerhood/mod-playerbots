@@ -476,15 +476,17 @@ bool BGJoinAction::JoinQueue(uint32 type)
             case BATTLEGROUND_SA:
                 _bgType = "SotA";
                 break;
-            case BATTLEGROUND_IC:
-                _bgType = "IoC";
-                break;
-            case BATTLEGROUND_WG:
-                _bgType = "WG";
-                break;
-            default:
-                break;
-        }
+        case BATTLEGROUND_IC:
+            _bgType = "IoC";
+            break;
+#ifdef BATTLEGROUND_WG
+        case BATTLEGROUND_WG:
+            _bgType = "WG";
+            break;
+#endif
+        default:
+            break;
+    }
 
     if (isArena)
     {
@@ -856,9 +858,11 @@ bool BGStatusAction::Execute(Event event)
         case BATTLEGROUND_IC:
             _bgType = "IoC";
             break;
+#ifdef BATTLEGROUND_WG
         case BATTLEGROUND_WG:
             _bgType = "WG";
             break;
+#endif
         default:
             break;
     }

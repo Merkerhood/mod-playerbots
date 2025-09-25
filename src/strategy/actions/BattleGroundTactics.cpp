@@ -1596,6 +1596,7 @@ bool BGTactics::Execute(Event event)
             vFlagIds = &vFlagsAV;
             break;
         }
+        
         case BATTLEGROUND_WS:
         {
             vPaths = &vPaths_WS;
@@ -1614,6 +1615,16 @@ bool BGTactics::Execute(Event event)
             vFlagIds = &vFlagsIC;
             break;
         }
+#ifdef BATTLEGROUND_WG
+        case BATTLEGROUND_WG:
+        {
+            // Minimal Wintergrasp stub: no predefined paths/flags here.
+            // Strategy and vehicle usage are handled by WintergraspStrategy triggers.
+            vPaths = nullptr;
+            vFlagIds = nullptr;
+            break;
+        }
+#endif
         default:
             // can't use this in this BG - no vPaths/vFlagIds (will crash server)
             botAI->ResetStrategies();
@@ -1669,7 +1680,7 @@ bool BGTactics::Execute(Event event)
                 return true;
         }
 
-        if (vFlagIds && atFlag(*vPaths, *vFlagIds))
+        if (vPaths && vFlagIds && atFlag(*vPaths, *vFlagIds))
             return true;
 
         if (useBuff())
@@ -1684,18 +1695,20 @@ bool BGTactics::Execute(Event event)
         }
 
         if (!moveToObjective(false))
-            if (!selectObjectiveWp(*vPaths))
+        {
+            if (!vPaths || !selectObjectiveWp(*vPaths))
                 return moveToObjective(true);
+        }
 
         // bot with flag should only move to objective
         if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
             bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
             return false;
 
-        if (!startNewPathBegin(*vPaths))
+        if (!vPaths || !startNewPathBegin(*vPaths))
             return moveToObjective(true);
 
-        if (!startNewPathFree(*vPaths))
+        if (!vPaths || !startNewPathFree(*vPaths))
             return moveToObjective(true);
     }
 
@@ -1832,6 +1845,14 @@ bool BGTactics::moveToStart(bool force)
                        IC_WAITING_POS_ALLIANCE.GetPositionZ());
         }
     }
+    #ifdef BATTLEGROUND_WG
+    else if (bgType == BATTLEGROUND_WG)
+    {
+        // Minimal WG: no fixed waiting positions to avoid bad coordinates.
+        // Keep position; vehicles/engagement handled by strategies.
+        return true;
+    }
+    #endif
 
     return true;
 }
@@ -2139,6 +2160,22 @@ bool BGTactics::selectObjective(bool reset)
 
             break;
         }
+#ifdef BATTLEGROUND_WG
+        case BATTLEGROUND_WG:
+        {
+            // Minimal WG objective: pursue nearest enemy player if any; else no-op.
+            if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
+            {
+                if (bot->GetDistance(enemy) < 500.0f)
+                {
+                    pos.Set(enemy->GetPositionX(), enemy->GetPositionY(), enemy->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
+            }
+            break;
+        }
+#endif
         case BATTLEGROUND_WS:
         {
             Position target;

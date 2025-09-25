@@ -744,8 +744,11 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         if (bgType == BATTLEGROUND_RB)
             bgType = player->GetBattleground()->GetBgTypeID(true);
 
-        if ((bgType <= BATTLEGROUND_EY || bgType == BATTLEGROUND_IC) &&
-            !player->InArena())  // do not add for not supported bg or arena
+        bool addBgGeneric = (bgType <= BATTLEGROUND_EY || bgType == BATTLEGROUND_IC);
+#ifdef BATTLEGROUND_WG
+        addBgGeneric = addBgGeneric || (bgType == BATTLEGROUND_WG);
+#endif
+        if (addBgGeneric && !player->InArena())
             nonCombatEngine->addStrategy("battleground", false);
 
         if (bgType == BATTLEGROUND_WS)
@@ -764,8 +767,10 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             nonCombatEngine->addStrategy("isle", false);
 
         // If Wintergrasp is available as an instanced battleground, prefer a dedicated strategy
+#ifdef BATTLEGROUND_WG
         if (bgType == BATTLEGROUND_WG)
             nonCombatEngine->addStrategy("wintergrasp", false);
+#endif
 
         if (player->InArena())
         {
