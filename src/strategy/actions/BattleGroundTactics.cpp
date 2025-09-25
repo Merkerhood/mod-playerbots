@@ -23,6 +23,7 @@
 #include "BattlegroundWS.h"
 #include "Event.h"
 #include "IVMapMgr.h"
+#include "BattlefieldMgr.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
 #include "PvpTriggers.h"
@@ -2228,6 +2229,31 @@ bool BGTactics::selectObjective(bool reset)
             // 2) Otherwise move to a gate or a southern tower, depending on role
             // 3) If a workshop banner is visible nearby, prefer that
 
+            // If we have enough friendly vehicles near the gate, push gate now
+            {
+                GuidVector nearbyVehicles = AI_VALUE(GuidVector, "nearest vehicles");
+                uint32 friendlyAtGate = 0;
+                for (ObjectGuid const& vg : nearbyVehicles)
+                {
+                    Unit* v = botAI->GetUnit(vg);
+                    if (!v)
+                        continue;
+                    if (!v->IsFriendlyTo(bot))
+                        continue;
+                    if (v->GetDistance(WG_GATE_POS) < 200.0f)
+                        friendlyAtGate++;
+                }
+                if (friendlyAtGate >= 2)
+                {
+                    pos.Set(WG_GATE_POS.GetPositionX(), WG_GATE_POS.GetPositionY(), WG_GATE_POS.GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    PositionInfo siege = posMap["bg siege"];
+                    siege.Set(pos.x, pos.y, pos.z, pos.mapId);
+                    posMap["bg siege"] = siege;
+                    return true;
+                }
+            }
+
             // Prefer nearby banners (workshops) first if visible
             GuidVector noLosObjects = AI_VALUE(GuidVector, "nearest game objects no los");
             GameObject* nearestBanner = nullptr;
@@ -2258,9 +2284,23 @@ bool BGTactics::selectObjective(bool reset)
                 return true;
             }
 
-            // Heuristic attacker/defender awareness based on proximity to keep/relic
-            bool nearKeep = (bot->GetDistance(WG_RELIC_POS) < 300.0f) || (bot->GetDistance(WG_GATE_POS) < 350.0f);
-            bool isDefender = nearKeep; // approximate: defenders linger at/inside keep
+            // Determine defender/attacker side based on battlefield state if possible
+            bool isDefender = false;
+            if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197 /*Wintergrasp*/))
+            {
+                isDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
+            }
+            else
+            {
+                // Fallback: prefer explicit control aura; last resort keep proximity heuristic
+                const uint32 WG_SPELL_ESSENCE_OF_WINTERGRASP = 58045;
+                isDefender = bot->HasAura(WG_SPELL_ESSENCE_OF_WINTERGRASP);
+                if (!isDefender)
+                {
+                    bool nearKeep = (bot->GetDistance(WG_RELIC_POS) < 300.0f) || (bot->GetDistance(WG_GATE_POS) < 350.0f);
+                    isDefender = nearKeep;
+                }
+            }
             uint8 role = context->GetValue<uint32>("bg role")->Get();
 
             // If close to relic, go for it
