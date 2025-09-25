@@ -1222,7 +1222,6 @@ std::vector<BattleBotPath*> const vPaths_IC = {
     &vPath_IC_Hanger_to_Workshop,
 };
 
-#ifdef BATTLEGROUND_WG
 // Minimal Wintergrasp paths to guide movement between key siege objectives
 // West approach (from western tower area toward the fortress gate)
 BattleBotPath vPath_WG_West_to_Gate = {
@@ -1260,7 +1259,6 @@ BattleBotPath vPath_WG_Gate_to_Relic = {
 
 std::vector<BattleBotPath*> const vPaths_WG = {&vPath_WG_West_to_Gate, &vPath_WG_South_to_Gate, &vPath_WG_East_to_Gate,
                                                &vPath_WG_Gate_to_Relic};
-#endif
 
 std::vector<BattleBotPath*> const vPaths_NoReverseAllowed = {
     &vPath_WSG_AllianceGraveyardJump,
@@ -1664,7 +1662,6 @@ bool BGTactics::Execute(Event event)
             vFlagIds = &vFlagsAV;
             break;
         }
-        
         case BATTLEGROUND_WS:
         {
             vPaths = &vPaths_WS;
@@ -1683,7 +1680,6 @@ bool BGTactics::Execute(Event event)
             vFlagIds = &vFlagsIC;
             break;
         }
-#ifdef BATTLEGROUND_WG
         case BATTLEGROUND_WG:
         {
             // Enable minimal WG paths and capture interactions via banners/relic
@@ -1691,7 +1687,6 @@ bool BGTactics::Execute(Event event)
             vFlagIds = &vFlagsWG;
             break;
         }
-#endif
         default:
             // can't use this in this BG - no vPaths/vFlagIds (will crash server)
             botAI->ResetStrategies();
@@ -1912,7 +1907,6 @@ bool BGTactics::moveToStart(bool force)
                        IC_WAITING_POS_ALLIANCE.GetPositionZ());
         }
     }
-    #ifdef BATTLEGROUND_WG
     else if (bgType == BATTLEGROUND_WG)
     {
         // Spread bots across lanes before battle start to avoid zerging one spot.
@@ -1948,7 +1942,6 @@ bool BGTactics::moveToStart(bool force)
             return MoveTo(bg->GetMapId(), lane.GetPositionX() + frand(-8.0f, 8.0f), lane.GetPositionY() + frand(-8.0f, 8.0f), lane.GetPositionZ());
         }
     }
-    #endif
 
     return true;
 }
@@ -2256,7 +2249,6 @@ bool BGTactics::selectObjective(bool reset)
 
             break;
         }
-#ifdef BATTLEGROUND_WG
         case BATTLEGROUND_WG:
         {
             // Try to push siege objectives; fall back to local PvP
@@ -2446,7 +2438,6 @@ bool BGTactics::selectObjective(bool reset)
             posMap["bg siege"] = siege;
             return true;
         }
-#endif
         case BATTLEGROUND_WS:
         {
             Position target;
@@ -3892,9 +3883,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         case BATTLEGROUND_AV:
         case BATTLEGROUND_AB:
         case BATTLEGROUND_IC:
-#ifdef BATTLEGROUND_WG
         case BATTLEGROUND_WG:
-#endif
         {
             // For territory control BGs, use standard interaction range
             closeObjects = *context->GetValue<GuidVector>("closest game objects");
@@ -4048,9 +4037,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             case BATTLEGROUND_AV:
             case BATTLEGROUND_AB:
             case BATTLEGROUND_IC:
-#ifdef BATTLEGROUND_WG
             case BATTLEGROUND_WG:
-#endif
             {
                 // Special WG handling: Titan's Relic is a direct-use GO
                 if (go->GetEntry() == 192829) // GO_WINTERGRASP_TITAN_S_RELIC
