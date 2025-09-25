@@ -1648,6 +1648,14 @@ bool BGTactics::Execute(Event event)
     if (bgType == BATTLEGROUND_RB)
         bgType = bot->GetBattleground()->GetBgTypeID(true);
 
+    // Wintergrasp (Battlefield) support: set paths/flags by zone
+    bool isWGZone = (bot->GetZoneId() == 4197);
+    if (isWGZone)
+    {
+        vPaths = &vPaths_WG;
+        vFlagIds = &vFlagsWG;
+    }
+
     switch (bgType)
     {
         case BATTLEGROUND_AB:
@@ -1689,8 +1697,13 @@ bool BGTactics::Execute(Event event)
         }
         default:
             // can't use this in this BG - no vPaths/vFlagIds (will crash server)
-            botAI->ResetStrategies();
-            return false;
+            // For WG (Battlefield) we rely on zone-based handling above
+            if (!isWGZone)
+            {
+                botAI->ResetStrategies();
+                return false;
+            }
+            break;
     }
 
     if (getName() == "move to start")
@@ -1907,13 +1920,14 @@ bool BGTactics::moveToStart(bool force)
                        IC_WAITING_POS_ALLIANCE.GetPositionZ());
         }
     }
-    else if (bgType == BATTLEGROUND_WG)
+    else if (bot->GetZoneId() == 4197)
     {
+        Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197 /* Wintergrasp */);
+        if (!bf || !bf->IsWarTime())
+            return true;
         // Spread bots across lanes before battle start to avoid zerging one spot.
         // Determine defender via battlefield state; defenders stage near the gate, attackers spread to lanes.
-        bool isDefender = false;
-        if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197 /* Wintergrasp */))
-            isDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
+        bool isDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
 
         uint32 role = context->GetValue<uint32>("bg role")->Get();
 
@@ -1949,10 +1963,15 @@ bool BGTactics::moveToStart(bool force)
 bool BGTactics::selectObjective(bool reset)
 {
     Battleground* bg = bot->GetBattleground();
+    bool isWGZone = (bot->GetZoneId() == 4197);
     if (!bg)
-        return false;
+    {
+        // Allow Wintergrasp objective selection outside of Battleground
+        if (!isWGZone)
+            return false;
+    }
 
-    if (bg->GetStatus() != STATUS_IN_PROGRESS)
+    if (bg && bg->GetStatus() != STATUS_IN_PROGRESS && !isWGZone)
         return false;
 
     PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
@@ -1962,9 +1981,165 @@ bool BGTactics::selectObjective(bool reset)
 
     WorldObject* BgObjective = nullptr;
 
-    BattlegroundTypeId bgType = bg->GetBgTypeID();
-    if (bgType == BATTLEGROUND_RB)
+    BattlegroundTypeId bgType = bot->GetBattlegroundTypeId();
+    if (bg && bgType == BATTLEGROUND_RB)
         bgType = bg->GetBgTypeID(true);
+
+    // Wintergrasp Battlefield objective selection (zone-driven)
+    if (isWGZone)
+    {
+        // Determine defender/attacker side
+        bool isDefender = false;
+        if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
+            isDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
+
+        // Try to push siege objectives; fall back to local PvP
+        // Gate push if friendly vehicles are massed
+        {
+            GuidVector nearbyVehicles = AI_VALUE(GuidVector, "nearest vehicles");
+            uint32 friendlyAtGate = 0;
+            for (ObjectGuid const& vg : nearbyVehicles)
+            {
+                Unit* v = botAI->GetUnit(vg);
+                if (!v || !v->IsFriendlyTo(bot))
+                    continue;
+                if (v->GetDistance(WG_GATE_POS) < 200.0f)
+                    friendlyAtGate++;
+            }
+            if (friendlyAtGate >= 2)
+            {
+                PositionInfo& siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
+                pos.Set(WG_GATE_POS.GetPositionX(), WG_GATE_POS.GetPositionY(), WG_GATE_POS.GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                siege.Set(pos.x, pos.y, pos.z, pos.mapId);
+                return true;
+            }
+        }
+
+        // Defenders: intercept nearest enemy vehicle
+        if (isDefender)
+        {
+            GuidVector vehs = AI_VALUE(GuidVector, "nearest vehicles");
+            Unit* enemyVeh = nullptr;
+            float evDist = FLT_MAX;
+            for (ObjectGuid const& vg : vehs)
+            {
+                Unit* v = botAI->GetUnit(vg);
+                if (!v || v->IsFriendlyTo(bot))
+                    continue;
+                float d = bot->GetDistance(v);
+                if (d < evDist)
+                {
+                    evDist = d;
+                    enemyVeh = v;
+                }
+            }
+            if (enemyVeh && evDist < 250.0f)
+            {
+                pos.Set(enemyVeh->GetPositionX(), enemyVeh->GetPositionY(), enemyVeh->GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                context->GetValue<Unit*>("current target")->Set(enemyVeh);
+                return true;
+            }
+        }
+
+        // Prefer nearby banners that are capturable
+        {
+            GuidVector noLosObjects = AI_VALUE(GuidVector, "nearest game objects no los");
+            GameObject* nearestBanner = nullptr;
+            float bestBannerDist = FLT_MAX;
+            for (ObjectGuid const& gid : noLosObjects)
+            {
+                GameObject* go = botAI->GetGameObject(gid);
+                if (!go)
+                    continue;
+                if (std::find(vFlagsWG.begin(), vFlagsWG.end(), go->GetEntry()) == vFlagsWG.end())
+                    continue;
+                if (go->GetEntry() == 192829) // Relic handled separately
+                    continue;
+                bool canUse = bot->CanUseBattlegroundObject(go);
+                float d = bot->GetDistance(go);
+                if ((canUse && d < bestBannerDist) || (!nearestBanner && d < bestBannerDist))
+                {
+                    bestBannerDist = d;
+                    nearestBanner = go;
+                }
+            }
+            if (nearestBanner)
+            {
+                pos.Set(nearestBanner->GetPositionX(), nearestBanner->GetPositionY(), nearestBanner->GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+        }
+
+        // If close to relic, go for it
+        if (bot->GetDistance(WG_RELIC_POS) < 200.0f)
+        {
+            pos.Set(WG_RELIC_POS.GetPositionX(), WG_RELIC_POS.GetPositionY(), WG_RELIC_POS.GetPositionZ(), bot->GetMapId());
+            posMap["bg objective"] = pos;
+            PositionInfo& siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
+            siege.Set(pos.x, pos.y, pos.z, pos.mapId);
+            return true;
+        }
+
+        // Escort role for attackers
+        uint32 role = context->GetValue<uint32>("bg role")->Get();
+        if (!isDefender && (role % 4 == 3))
+        {
+            GuidVector nearby = AI_VALUE(GuidVector, "nearest vehicles");
+            Unit* best = nullptr;
+            float bestd = FLT_MAX;
+            for (ObjectGuid const& vg : nearby)
+            {
+                Unit* v = botAI->GetUnit(vg);
+                if (!v || !v->IsFriendlyTo(bot))
+                    continue;
+                uint32 ve = v->GetEntry();
+                if (ve != WG_ENTRY_SIEGE_ENGINE_A && ve != WG_ENTRY_SIEGE_ENGINE_H && ve != WG_ENTRY_CATAPULT && ve != WG_ENTRY_DEMOLISHER)
+                    continue;
+                float d = bot->GetDistance(v);
+                if (d < bestd)
+                {
+                    bestd = d;
+                    best = v;
+                }
+            }
+            if (best && bestd < 150.0f)
+            {
+                pos.Set(best->GetPositionX(), best->GetPositionY(), best->GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+        }
+
+        // Choose siege objective
+        Position siegeTarget = WG_GATE_POS;
+        if (!isDefender)
+        {
+            if (role % 3 == 1)
+                siegeTarget = WG_TOWER_S_POS;
+            else if (role % 3 == 2)
+                siegeTarget = (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_W_POS : WG_TOWER_E_POS);
+        }
+        else
+        {
+            siegeTarget = (role % 2 == 1) ? WG_GATE_POS : (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_E_POS : WG_TOWER_W_POS);
+        }
+
+        if (isDefender && siegeTarget.GetPositionX() == WG_GATE_POS.GetPositionX() && !botAI->IsRanged(bot))
+        {
+            float ox = (role % 2 == 0 ? -12.0f : 12.0f);
+            float oy = (role % 3 == 0 ? -6.0f : 6.0f);
+            pos.Set(WG_GATE_POS.GetPositionX() + ox, WG_GATE_POS.GetPositionY() + oy, WG_GATE_POS.GetPositionZ(), bot->GetMapId());
+        }
+        else
+        {
+            pos.Set(siegeTarget.GetPositionX(), siegeTarget.GetPositionY(), siegeTarget.GetPositionZ(), bot->GetMapId());
+        }
+        posMap["bg objective"] = pos;
+        return true;
+    }
     switch (bgType)
     {
         case BATTLEGROUND_AV:
@@ -3877,7 +4052,14 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
     GuidVector closePlayers;
     float flagRange = 0.0f;
 
-    // Set up appropriate search ranges and object lists based on BG type
+    // Set up appropriate search ranges and object lists
+    if (bot->GetZoneId() == 4197) // Wintergrasp Battlefield
+    {
+        closeObjects = *context->GetValue<GuidVector>("closest game objects");
+        closePlayers = *context->GetValue<GuidVector>("closest friendly players");
+        flagRange = INTERACTION_DISTANCE;
+    }
+    else
     switch (bgType)
     {
         case BATTLEGROUND_AV:
