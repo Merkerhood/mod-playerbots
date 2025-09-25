@@ -1755,7 +1755,8 @@ bool BGTactics::Execute(Event event)
                 return true;
         }
 
-        if (vFlagIds && atFlag(vPaths ? *vPaths : std::vector<BattleBotPath*>{}, *vFlagIds))
+        static const std::vector<BattleBotPath*> EMPTY_BATTLEBOTPATH_VECTOR;
+        if (vFlagIds && atFlag(vPaths ? *vPaths : EMPTY_BATTLEBOTPATH_VECTOR, *vFlagIds))
             return true;
 
         if (useBuff())
