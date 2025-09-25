@@ -14,6 +14,7 @@
 #include "Unit.h"
 #include "Vehicle.h"
 #include "BattlefieldMgr.h"
+#include "ServerFacade.h"
 
 // Wintergrasp rank auras (from TC 3.3.5 BattlefieldWG.h)
 static constexpr uint32 WG_SPELL_RECRUIT    = 37795;
@@ -26,6 +27,12 @@ static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_A = 28312;
 static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_H = 32627;
 static constexpr uint32 WG_ENTRY_CATAPULT       = 27881;
 static constexpr uint32 WG_ENTRY_DEMOLISHER     = 28094;
+static constexpr uint32 WG_TOWER_CANNON_ENTRY   = 28366; // NPC_WINTERGRASP_TOWER_CANNON
+
+// Wintergrasp key position (Gate) to detect fortress pressure
+static constexpr float WG_GATE_X = 5162.991f;
+static constexpr float WG_GATE_Y = 2841.232f;
+static constexpr float WG_GATE_Z = 410.189f;
 
 static inline bool HasWGRankAtLeast(Player* p)
 {
@@ -80,6 +87,55 @@ bool EnterVehicleAction::Execute(Event event)
     }
 
     GuidVector npcs = AI_VALUE(GuidVector, "nearest vehicles");
+
+    // Prefer tower cannons for defenders when enemies are attacking near the fortress gate
+    bool preferCannons = false;
+    bool isWG = (bot->GetZoneId() == WG_ZONE_ID);
+    bool isWGDefender = false;
+    if (isWG)
+    {
+        if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WG_ZONE_ID))
+            isWGDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
+
+        if (isWGDefender)
+        {
+            if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
+            {
+                float dGateEnemy = enemy->GetDistance(WG_GATE_X, WG_GATE_Y, WG_GATE_Z);
+                preferCannons = (dGateEnemy < 250.0f);
+            }
+        }
+    }
+
+    if (preferCannons)
+    {
+        Unit* bestCannon = nullptr;
+        float bestDist = FLT_MAX;
+        for (auto const& guid : npcs)
+        {
+            Unit* v = botAI->GetUnit(guid);
+            if (!v)
+                continue;
+            if (v->GetEntry() != WG_TOWER_CANNON_ENTRY)
+                continue;
+            if (!v->IsFriendlyTo(bot))
+                continue;
+            Vehicle* veh = v->GetVehicleKit();
+            if (!veh || !veh->GetAvailableSeatCount() || veh->IsVehicleInUse())
+                continue;
+            float d = sServerFacade->GetDistance2d(bot, v);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                bestCannon = v;
+            }
+        }
+        if (bestCannon)
+        {
+            if (EnterVehicle(bestCannon, true))
+                return true;
+        }
+    }
     for (GuidVector::iterator i = npcs.begin(); i != npcs.end(); i++)
     {
         Unit* vehicleBase = botAI->GetUnit(*i);
@@ -90,15 +146,7 @@ bool EnterVehicleAction::Execute(Event event)
             continue;
 
         // dont let them get in IoC cannons; allow WG tower cannons for defenders
-        bool isWG = (bot->GetZoneId() == WG_ZONE_ID);
-        bool isWGDefender = false;
-        if (isWG)
-        {
-            if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WG_ZONE_ID))
-                isWGDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
-        }
         uint32 entry = vehicleBase->GetEntry();
-        const uint32 WG_TOWER_CANNON_ENTRY = 28366; // NPC_WINTERGRASP_TOWER_CANNON
         if (NPC_KEEP_CANNON == entry || (!isWGDefender && entry == WG_TOWER_CANNON_ENTRY))
             continue;
 
