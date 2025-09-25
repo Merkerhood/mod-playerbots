@@ -2255,7 +2255,9 @@ bool BGTactics::selectObjective(bool reset)
                 return true;
             }
 
-            // Randomize between siege targets to spread bots
+            // Heuristic attacker/defender awareness based on proximity to keep/relic
+            bool nearKeep = (bot->GetDistance(WG_RELIC_POS) < 300.0f) || (bot->GetDistance(WG_GATE_POS) < 350.0f);
+            bool isDefender = nearKeep; // approximate: defenders linger at/inside keep
             uint8 role = context->GetValue<uint32>("bg role")->Get();
 
             // If close to relic, go for it
@@ -2270,12 +2272,25 @@ bool BGTactics::selectObjective(bool reset)
                 return true;
             }
 
-            // Choose a siege objective: gate (primary), or one of the southern towers
+            // Choose a siege objective based on role and (approx) attacker/defender
             Position siegeTarget = WG_GATE_POS;
-            if (role % 3 == 1)
-                siegeTarget = WG_TOWER_S_POS;
-            else if (role % 3 == 2)
-                siegeTarget = (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_W_POS : WG_TOWER_E_POS); // simple side bias
+            if (!isDefender)
+            {
+                // Attacker priorities
+                if (role % 3 == 1)
+                    siegeTarget = WG_TOWER_S_POS; // debuff defenders' vehicles
+                else if (role % 3 == 2)
+                    siegeTarget = (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_W_POS : WG_TOWER_E_POS);
+            }
+            else
+            {
+                // Defender priorities
+                // Hold gate, or shift to nearest southern tower to defend
+                if (role % 2 == 1)
+                    siegeTarget = WG_GATE_POS;
+                else
+                    siegeTarget = (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_E_POS : WG_TOWER_W_POS);
+            }
 
             pos.Set(siegeTarget.GetPositionX(), siegeTarget.GetPositionY(), siegeTarget.GetPositionZ(), bot->GetMapId());
             posMap["bg objective"] = pos;

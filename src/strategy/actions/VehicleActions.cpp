@@ -20,6 +20,34 @@ static constexpr uint32 WG_SPELL_CORPORAL   = 33280;
 static constexpr uint32 WG_SPELL_LIEUTENANT = 55629;
 static constexpr uint32 WG_ZONE_ID          = 4197; // Wintergrasp Zone
 
+// Wintergrasp vehicle entries (Trinity 3.3.5)
+static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_A = 28312;
+static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_H = 32627;
+static constexpr uint32 WG_ENTRY_CATAPULT       = 27881;
+static constexpr uint32 WG_ENTRY_DEMOLISHER     = 28094;
+
+static inline bool HasWGRankAtLeast(Player* p)
+{
+    // Any of the rank auras qualifies as ranked; specific vehicle types may require higher ranks (checked below)
+    return p->HasAura(WG_SPELL_RECRUIT) || p->HasAura(WG_SPELL_CORPORAL) || p->HasAura(WG_SPELL_LIEUTENANT);
+}
+
+static inline bool HasWGRankForVehicle(Player* p, uint32 vehicleEntry)
+{
+    // Conservative default: Corporal for catapult/demolisher, Lieutenant for siege engine
+    switch (vehicleEntry)
+    {
+        case WG_ENTRY_SIEGE_ENGINE_A:
+        case WG_ENTRY_SIEGE_ENGINE_H:
+            return p->HasAura(WG_SPELL_LIEUTENANT);
+        case WG_ENTRY_DEMOLISHER:
+        case WG_ENTRY_CATAPULT:
+            return p->HasAura(WG_SPELL_CORPORAL) || p->HasAura(WG_SPELL_LIEUTENANT);
+        default:
+            return HasWGRankAtLeast(p);
+    }
+}
+
 // TODO methods to enter/exit vehicle should be added to BGTactics or MovementAction (so that we can better control
 // whether bot is in vehicle, eg: get out of vehicle to cap flag, if we're down to final boss, etc),
 // right now they will enter vehicle based only what's available here, then they're stuck in vehicle until they die
@@ -31,12 +59,9 @@ bool EnterVehicleAction::Execute(Event event)
         return false;
 
     // In Wintergrasp, require rank aura before entering vehicles
-    if (bot->GetZoneId() == WG_ZONE_ID)
-    {
-        bool hasRank = bot->HasAura(WG_SPELL_RECRUIT) || bot->HasAura(WG_SPELL_CORPORAL) || bot->HasAura(WG_SPELL_LIEUTENANT);
-        if (!hasRank)
-            return false;
-    }
+    bool inWG = (bot->GetZoneId() == WG_ZONE_ID);
+    if (inWG && !HasWGRankAtLeast(bot))
+        return false;
 
     Player* master = botAI->GetMaster();
     // Triggered by a chat command
@@ -64,9 +89,17 @@ bool EnterVehicleAction::Execute(Event event)
             continue;
 
         // dont let them get in the cannons as they'll stay forever and do nothing useful
-        // dont let them in catapult they cant use them at all
-        if (NPC_KEEP_CANNON == vehicleBase->GetEntry() || NPC_CATAPULT == vehicleBase->GetEntry())
+        // allow catapult only in Wintergrasp, not in IoC
+        if (NPC_KEEP_CANNON == vehicleBase->GetEntry())
             continue;
+
+        // Enforce WG per-vehicle rank requirements when in WG
+        if (inWG)
+        {
+            uint32 entry = vehicleBase->GetEntry();
+            if (!HasWGRankForVehicle(bot, entry))
+                continue;
+        }
 
         if (!vehicleBase->IsFriendlyTo(bot))
             continue;
