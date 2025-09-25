@@ -763,6 +763,10 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         if (bgType == BATTLEGROUND_IC)
             nonCombatEngine->addStrategy("isle", false);
 
+        // If Wintergrasp is available as an instanced battleground, prefer a dedicated strategy
+        if (bgType == BATTLEGROUND_WG)
+            nonCombatEngine->addStrategy("wintergrasp", false);
+
         if (player->InArena())
         {
             nonCombatEngine->addStrategy("arena", false);

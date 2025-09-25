@@ -84,6 +84,31 @@ void IsleStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("glaive throw", ACTION_MOVE + 9.0f), nullptr)));
 }
 
+// Wintergrasp is siege-focused like IoC but with different objectives.
+// We keep initial behavior simple and vehicle-centric to be safe across cores:
+// - Try to enter a vehicle frequently once active
+// - Use generic vehicle abilities when in a vehicle
+// Generic PvP and non-combat strategies added by AiFactory handle target selection and fighting.
+void WintergraspStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+{
+    // Proactively try to get into a vehicle when the battle is active
+    triggers.push_back(new TriggerNode("bg active", NextAction::array(0, new NextAction("enter vehicle", ACTION_MOVE + 7.0f), nullptr)));
+    triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("enter vehicle", ACTION_MOVE + 6.5f), nullptr)));
+
+    // Vehicle ability usage
+    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("hurl boulder", ACTION_MOVE + 9.0f), nullptr)));
+    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("fire cannon", ACTION_MOVE + 9.0f), nullptr)));
+    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("incendiary rocket", ACTION_MOVE + 9.0f), nullptr)));
+    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("rocket blast", ACTION_MOVE + 9.0f), nullptr)));
+    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("napalm", ACTION_MOVE + 9.0f), nullptr)));
+
+    // Close-quarters while in vehicles (steam/ram style interactions)
+    triggers.push_back(new TriggerNode("enemy is close", NextAction::array(0, new NextAction("steam blast", ACTION_MOVE + 9.0f), nullptr)));
+    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("ram", ACTION_MOVE + 9.0f), nullptr)));
+    triggers.push_back(new TriggerNode("enemy is close", NextAction::array(0, new NextAction("ram", ACTION_MOVE + 9.1f), nullptr)));
+    triggers.push_back(new TriggerNode("enemy out of melee", NextAction::array(0, new NextAction("steam rush", ACTION_MOVE + 9.2f), nullptr)));
+}
+
 void ArenaStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(
