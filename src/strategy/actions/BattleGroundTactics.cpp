@@ -1651,7 +1651,7 @@ bool BGTactics::Execute(Event event)
 
     // Wintergrasp (Battlefield) support: set paths/flags by zone
     // Wintergrasp (Battlefield) support: set paths/flags by zone
-    isWGZone = (bot->GetZoneId() == 4197);
+    // isWGZone already set above
     if (isWGZone)
     {
         vPaths = &vPaths_WG;
