@@ -103,6 +103,16 @@ Position const IC_CANNON_POS_ALLIANCE2 = {425.525f, -779.538f, 87.717f, 5.88f};
 Position const IC_GATE_ATTACK_POS_HORDE = {506.782f, -828.594f, 24.313f, 0.0f};
 Position const IC_GATE_ATTACK_POS_ALLIANCE = {1091.273f, -763.619f, 42.352f, 0.0f};
 
+// Wintergrasp key positions (from TC 3.3.5)
+// Fortress outer gate (siege focus for attackers)
+static Position const WG_GATE_POS = {5162.991f, 2841.232f, 410.1892f, -3.132858f};
+// Titan's Relic (final objective for attackers)
+static Position const WG_RELIC_POS = {5440.379f, 2840.493f, 430.2816f, -1.832595f};
+// Southern/external towers (attacker siege boosters / defender priorities)
+static Position const WG_TOWER_W_POS = {4557.173f, 3623.943f, 395.8828f, 1.675516f};
+static Position const WG_TOWER_S_POS = {4398.172f, 2822.497f, 405.6270f, -3.124123f};
+static Position const WG_TOWER_E_POS = {4459.105f, 1944.326f, 434.9912f, -2.002762f};
+
 enum BattleBotWsgWaitSpot
 {
     BB_WSG_WAIT_SPOT_SPAWN,
@@ -2173,17 +2183,68 @@ bool BGTactics::selectObjective(bool reset)
 #ifdef BATTLEGROUND_WG
         case BATTLEGROUND_WG:
         {
-            // Minimal WG objective: pursue nearest enemy player if any; else no-op.
-            if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
+            // Try to push siege objectives; fall back to local PvP
+            // 1) If relic is interactible and close enough, go there
+            // 2) Otherwise move to a gate or a southern tower, depending on role
+            // 3) If a workshop banner is visible nearby, prefer that
+
+            // Prefer nearby banners (workshops) first if visible
+            GuidVector noLosObjects = AI_VALUE(GuidVector, "nearest game objects no los");
+            GameObject* nearestBanner = nullptr;
+            float bestBannerDist = FLT_MAX;
+            for (ObjectGuid const& gid : noLosObjects)
             {
-                if (bot->GetDistance(enemy) < 500.0f)
+                GameObject* go = botAI->GetGameObject(gid);
+                if (!go)
+                    continue;
+                if (std::find(vFlagsWG.begin(), vFlagsWG.end(), go->GetEntry()) == vFlagsWG.end())
+                    continue;
+                if (go->GetEntry() == 192829) // Relic handled below
+                    continue;
+                float d = bot->GetDistance(go);
+                if (d < bestBannerDist)
                 {
-                    pos.Set(enemy->GetPositionX(), enemy->GetPositionY(), enemy->GetPositionZ(), bot->GetMapId());
-                    posMap["bg objective"] = pos;
-                    return true;
+                    bestBannerDist = d;
+                    nearestBanner = go;
                 }
             }
-            break;
+            if (nearestBanner)
+            {
+                pos.Set(nearestBanner->GetPositionX(), nearestBanner->GetPositionY(), nearestBanner->GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+
+            // Randomize between siege targets to spread bots
+            uint8 role = context->GetValue<uint32>("bg role")->Get();
+
+            // If close to relic, go for it
+            if (bot->GetDistance(WG_RELIC_POS) < 200.0f)
+            {
+                pos.Set(WG_RELIC_POS.GetPositionX(), WG_RELIC_POS.GetPositionY(), WG_RELIC_POS.GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                // Set siege target as well for vehicle aim
+                PositionInfo siege = posMap["bg siege"];
+                siege.Set(pos.x, pos.y, pos.z, pos.mapId);
+                posMap["bg siege"] = siege;
+                return true;
+            }
+
+            // Choose a siege objective: gate (primary), or one of the southern towers
+            Position siegeTarget = WG_GATE_POS;
+            if (role % 3 == 1)
+                siegeTarget = WG_TOWER_S_POS;
+            else if (role % 3 == 2)
+                siegeTarget = (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_W_POS : WG_TOWER_E_POS); // simple side bias
+
+            pos.Set(siegeTarget.GetPositionX(), siegeTarget.GetPositionY(), siegeTarget.GetPositionZ(), bot->GetMapId());
+            posMap["bg objective"] = pos;
+
+            // Also set siege aim position to help vehicle spells pick a destination
+            PositionInfo siege = posMap["bg siege"];
+            siege.Set(pos.x, pos.y, pos.z, pos.mapId);
+            posMap["bg siege"] = siege;
+            return true;
         }
 #endif
         case BATTLEGROUND_WS:
