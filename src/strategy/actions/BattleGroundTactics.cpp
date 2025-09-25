@@ -2611,7 +2611,7 @@ bool BGTactics::selectObjective(bool reset)
                     isDefender = nearKeep;
                 }
             }
-            uint8 role = context->GetValue<uint32>("bg role")->Get();
+            uint8 role = static_cast<uint8>(context->GetValue<uint32>("bg role")->Get());
 
             // If close to relic, go for it
             if (bot->GetDistance(WG_RELIC_POS) < 200.0f)
