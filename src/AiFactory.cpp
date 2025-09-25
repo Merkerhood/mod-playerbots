@@ -6,6 +6,7 @@
 #include "AiFactory.h"
 
 #include "BattlegroundMgr.h"
+#include "BattlefieldMgr.h"
 #include "DKAiObjectContext.h"
 #include "DruidAiObjectContext.h"
 #include "Engine.h"

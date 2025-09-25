@@ -107,6 +107,12 @@ void WintergraspStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("ram", ACTION_MOVE + 9.0f), nullptr)));
     triggers.push_back(new TriggerNode("enemy is close", NextAction::array(0, new NextAction("ram", ACTION_MOVE + 9.1f), nullptr)));
     triggers.push_back(new TriggerNode("enemy out of melee", NextAction::array(0, new NextAction("steam rush", ACTION_MOVE + 9.2f), nullptr)));
+
+    // Objective and capture flow for Battlefield WG (zone-based)
+    // Drive the same BGTactics actions used in BGs but without requiring InBattleground()
+    triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("bg move to objective", ACTION_BG), nullptr)));
+    triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("bg check flag", ACTION_BG + 1), nullptr)));
+    triggers.push_back(new TriggerNode("dead", NextAction::array(0, new NextAction("bg reset objective force", ACTION_EMERGENCY), nullptr)));
 }
 
 void ArenaStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
