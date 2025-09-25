@@ -2529,9 +2529,8 @@ bool BGTactics::selectObjective(bool reset)
                 {
                     pos.Set(WG_GATE_POS.GetPositionX(), WG_GATE_POS.GetPositionY(), WG_GATE_POS.GetPositionZ(), bot->GetMapId());
                     posMap["bg objective"] = pos;
-                    PositionInfo siege = posMap["bg siege"];
+                    PositionInfo& siege = posMap["bg siege"];
                     siege.Set(pos.x, pos.y, pos.z, pos.mapId);
-                    posMap["bg siege"] = siege;
                     return true;
                 }
             }
