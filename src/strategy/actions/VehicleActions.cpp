@@ -14,7 +14,6 @@
 #include "Unit.h"
 #include "Vehicle.h"
 #include "BattlefieldMgr.h"
-#include "ServerFacade.h"
 
 // Wintergrasp rank auras (from TC 3.3.5 BattlefieldWG.h)
 static constexpr uint32 WG_SPELL_RECRUIT    = 37795;
