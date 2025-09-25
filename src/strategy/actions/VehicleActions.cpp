@@ -153,7 +153,7 @@ bool EnterVehicleAction::Execute(Event event)
         if (vehicleBase->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
             continue;
 
-        // dont let them get in IoC cannons; allow WG tower cannons for defenders
+        // don't let them get in IoC cannons; allow WG tower cannons for defenders
         uint32 entry = vehicleBase->GetEntry();
         if (NPC_KEEP_CANNON == entry || (!isWGDefender && entry == WG_TOWER_CANNON_ENTRY))
             continue;
