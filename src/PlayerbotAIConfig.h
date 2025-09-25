@@ -218,6 +218,8 @@ public:
 
     bool randomBotJoinBG;
     bool randomBotAutoJoinBG;
+    // Wintergrasp (Battlefield) queue: allow random bots to join queue (teleport on war start)
+    bool randomBotAutoJoinWGQueue;
 
     std::string randomBotAutoJoinICBrackets;
     std::string randomBotAutoJoinEYBrackets;

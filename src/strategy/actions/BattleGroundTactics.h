@@ -147,4 +147,34 @@ private:
     bool moveToCenter(Battleground* bg);
 };
 
+// Travel to Wintergrasp (Battlefield) when a battle is active
+class WintergraspTravelAction : public Action
+{
+public:
+    WintergraspTravelAction(PlayerbotAI* botAI, std::string const name = "wg travel") : Action(botAI, name) {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
+// Join the Wintergrasp queue anywhere (no NPC gossip), using battlefield API
+class WintergraspQueueAction : public Action
+{
+public:
+    WintergraspQueueAction(PlayerbotAI* botAI, std::string const name = "wg queue") : Action(botAI, name) {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
+// Enter the Wintergrasp war (teleport), using battlefield API
+class WintergraspEnterWarAction : public Action
+{
+public:
+    WintergraspEnterWarAction(PlayerbotAI* botAI, std::string const name = "wg enter war") : Action(botAI, name) {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
 #endif

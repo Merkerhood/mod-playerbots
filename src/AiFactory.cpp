@@ -729,15 +729,10 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     {
         nonCombatEngine->ChangeStrategy(sPlayerbotAIConfig->nonCombatStrategies);
     }
-    // Add Wintergrasp strategy only when a WG battle is active in the zone
-    if (player->GetZoneId() == 4197)
-    {
-        if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
-        {
-            if (bf->IsWarTime())
-                nonCombatEngine->addStrategy("wintergrasp", false);
-        }
-    }
+    // Ensure Wintergrasp strategy is available; triggers inside gate actual behavior.
+    // Always add for random bots so they can react to wartime and travel.
+    if (sRandomPlayerbotMgr->IsRandomBot(player) || (sBattlefieldMgr->GetBattlefieldToZoneId(4197) != nullptr))
+        nonCombatEngine->addStrategy("wintergrasp", false);
 
     // nonCombatEngine->addStrategy("battleground");
     // nonCombatEngine->addStrategy("warsong");

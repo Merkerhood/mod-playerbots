@@ -91,6 +91,15 @@ void IsleStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 // Generic PvP and non-combat strategies added by AiFactory handle target selection and fighting.
 void WintergraspStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // Travel to Wintergrasp during wartime (random bots)
+    triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("wg travel", ACTION_BG + 0.5f), nullptr)));
+
+    // Pre-wartime queuing so bots get teleported when war starts
+    triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("wg queue", ACTION_BG + 0.6f), nullptr)));
+
+    // On wartime, accept entry (teleport into WG) even if not in zone
+    triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("wg enter war", ACTION_BG + 0.7f), nullptr)));
+
     // Proactively try to get into a vehicle when the battle is active
     triggers.push_back(new TriggerNode("bg active", NextAction::array(0, new NextAction("enter vehicle", ACTION_MOVE + 7.0f), nullptr)));
     triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("enter vehicle", ACTION_MOVE + 6.5f), nullptr)));

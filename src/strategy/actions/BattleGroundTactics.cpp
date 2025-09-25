@@ -30,6 +30,11 @@
 #include "PathGenerator.h"
 #include "ServerFacade.h"
 #include "Vehicle.h"
+#include "BattlefieldMgr.h"
+#include "Battlefield.h"
+#include "ChooseTravelTargetAction.h"
+#include "ObjectAccessor.h"
+#include "TravelMgr.h"
 
 // common bg positions
 Position const WS_WAITING_POS_HORDE_1 = {944.981f, 1423.478f, 345.434f, 6.18f};
@@ -4611,6 +4616,149 @@ bool ArenaTactics::Execute(Event event)
         return moveToCenter(bg);
 
     return true;
+}
+
+bool WintergraspTravelAction::isUseful()
+{
+    if (!sRandomPlayerbotMgr->IsRandomBot(bot))
+        return false;
+
+    if (bot->InBattleground() || bot->IsInCombat())
+        return false;
+
+    if (bot->GetZoneId() == 4197) // already in WG
+        return false;
+
+    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
+    {
+        // Travel during wartime, or pre-stage when the battlefield exists (no timer exposed; staging is opportunistic)
+        return true;
+    }
+
+    return false;
+}
+
+bool WintergraspTravelAction::Execute(Event event)
+{
+    // Find a travel destination that matches Wintergrasp and set it as travel target
+    TravelTarget* target = context->GetValue<TravelTarget*>("travel target")->Get();
+
+    // Avoid overriding an active travel toward WG repeatedly
+    if (target->isTraveling())
+        return false;
+
+    if (TravelDestination* dest = ChooseTravelTargetAction::FindDestination(bot, "Wintergrasp"))
+    {
+        WorldPosition botPos(bot);
+        std::vector<WorldPosition*> points = dest->nextPoint(&botPos, true);
+        if (points.empty())
+            return false;
+
+        target->setTarget(dest, points.front());
+        target->setForced(true);
+
+        if (!botAI->HasStrategy("travel", BOT_STATE_NON_COMBAT))
+            botAI->ChangeStrategy("+travel", BOT_STATE_NON_COMBAT);
+
+        LOG_INFO("playerbots", "Bot {} <{}>: Traveling to Wintergrasp (Battlefield)", bot->GetGUID().ToString().c_str(), bot->GetName());
+
+        return true;
+    }
+
+    return false;
+}
+
+bool WintergraspQueueAction::isUseful()
+{
+    if (!sRandomPlayerbotMgr->IsRandomBot(bot))
+        return false;
+
+    if (!sPlayerbotAIConfig->randomBotAutoTravelWG)
+        return false;
+
+    if (bot->InBattleground() || bot->IsInCombat())
+        return false;
+
+    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);
+    if (!bf)
+        return false;
+
+    // Queue only before wartime
+    if (bf->IsWarTime())
+        return false;
+
+    // Simple level gate: respect WG bracket (default 79-80)
+    auto it = sRandomPlayerbotMgr->zone2LevelBracket.find(4197);
+    if (it != sRandomPlayerbotMgr->zone2LevelBracket.end())
+    {
+        uint32 minL = it->second.first;
+        if (bot->GetLevel() < minL)
+            return false;
+    }
+
+    return true;
+}
+
+bool WintergraspQueueAction::Execute(Event /*event*/)
+{
+    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
+    {
+        bf->PlayerAcceptInviteToQueue(bot);
+        return true;
+    }
+    return false;
+}
+
+bool WintergraspEnterWarAction::isUseful()
+{
+    if (!sRandomPlayerbotMgr->IsRandomBot(bot))
+        return false;
+
+    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);
+    if (!bf)
+        return false;
+
+    // Only when war time is active
+    if (!bf->IsWarTime())
+        return false;
+
+    // If already in Wintergrasp map/zone, no need
+    if (bot->GetZoneId() == 4197)
+        return false;
+
+    // If auto-join queue is disabled, only fill when real players joined (present in WG)
+    if (!sPlayerbotAIConfig->randomBotAutoJoinWGQueue)
+    {
+        std::shared_lock<std::shared_mutex> lock(*HashMapHolder<Player>::GetLock());
+        HashMapHolder<Player>::MapType const& m = ObjectAccessor::GetPlayers();
+        bool realPresent = false;
+        for (auto const& pair : m)
+        {
+            Player* plr = pair.second;
+            if (!plr || !plr->IsInWorld())
+                continue;
+            if (plr->GetZoneId() != 4197)
+                continue;
+            if (sRandomPlayerbotMgr->IsRandomBot(plr))
+                continue; // skip bots
+            realPresent = true;
+            break;
+        }
+        if (!realPresent)
+            return false;
+    }
+
+    return true;
+}
+
+bool WintergraspEnterWarAction::Execute(Event /*event*/)
+{
+    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
+    {
+        bf->PlayerAcceptInviteToWar(bot);
+        return true;
+    }
+    return false;
 }
 
 bool ArenaTactics::moveToCenter(Battleground* bg)

@@ -1016,6 +1016,11 @@ AiPlayerbot.ZoneBracket.3537 = 68,75
 AiPlayerbot.ZoneBracket.3711 = 75,80
 AiPlayerbot.ZoneBracket.4197 = 79,80
 
+# Random bots may auto-join the Wintergrasp queue (anywhere), so at war start they get teleported in.
+# This simulates queuing via the Dalaran WG battlemage/gossip and fills teams when players join.
+# Default: 1 (enabled)
+AiPlayerbot.RandomBotAutoJoinWGQueue = 1
+
 #
 #
 #
