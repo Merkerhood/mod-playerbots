@@ -21,6 +21,10 @@ static constexpr float WG_GATE_X = 5162.991f;
 static constexpr float WG_GATE_Y = 2841.232f;
 static constexpr float WG_GATE_Z = 410.189f;
 
+// IoC (Isle of Conquest) vehicle entries that bots should avoid
+static constexpr uint32 NPC_KEEP_CANNON = 34929; // IoC Keep Cannon
+static constexpr uint32 NPC_CATAPULT = 34935;    // IoC Catapult
+
 static inline bool HasWGRankAtLeast(Player* p)
 {
     // Any of the rank auras qualifies as ranked; specific vehicle types may require higher ranks (checked below)
@@ -141,9 +145,9 @@ bool EnterVehicleAction::Execute(Event event)
         if (vehicleBase->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
             continue;
 
-        // don't let them get in IoC cannons; allow WG tower cannons for defenders
+        // Don't let them get in IoC cannons (Keep Cannon & Catapult); allow WG tower cannons for defenders only
         uint32 entry = vehicleBase->GetEntry();
-        if (NPC_KEEP_CANNON == entry || (!isWGDefender && entry == WG_TOWER_CANNON_ENTRY))
+        if (NPC_KEEP_CANNON == entry || NPC_CATAPULT == entry || (!isWGDefender && entry == WG_TOWER_CANNON_ENTRY))
             continue;
 
         // Enforce WG per-vehicle rank requirements when in WG
