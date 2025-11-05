@@ -209,7 +209,6 @@ public:
         creators["wg travel"] = &ActionContext::wg_travel;
         creators["wg queue"] = &ActionContext::wg_queue;
         creators["wg enter war"] = &ActionContext::wg_enter_war;
-        creators["wg travel"] = &ActionContext::wg_travel;
 
         // Vehicles
         creators["enter vehicle"] = &ActionContext::enter_vehicle;
