@@ -53,6 +53,17 @@ enum EYBotStrategy : uint8
 // Wintergrasp Zone and Constants
 constexpr uint32 WINTERGRASP_ZONE_ID = 4197;
 
+// Wintergrasp Area IDs (from AzerothCore AreaDefines.h)
+constexpr uint32 AREA_THE_SUNKEN_RING    = 4538; // NE Workshop
+constexpr uint32 AREA_THE_BROKEN_TEMPLE  = 4539; // NW Workshop
+constexpr uint32 AREA_WESTSPARK_WORKSHOP = 4611; // SW Workshop
+constexpr uint32 AREA_EASTSPARK_WORKSHOP = 4612; // SE Workshop
+constexpr uint32 AREA_WINTERGRASP_FORTRESS = 4575; // Keep area
+constexpr uint32 AREA_THE_CHILLED_QUAGMIRE = 4589; // Horde staging area
+
+// Wintergrasp Game Mechanics Constants
+constexpr uint32 WG_VEHICLES_PER_WORKSHOP = 4; // Each workshop adds 4 vehicles to max capacity
+
 // Wintergrasp Strategy Types
 enum WGBotStrategy : uint8
 {

@@ -116,6 +116,7 @@ public:
     void IncreaseLevel(Player* bot);
     void ScheduleTeleport(uint32 bot, uint32 time = 0);
     void ScheduleChangeStrategy(uint32 bot, uint32 time = 0);
+    void RefreshWGTeamCapCache();  // Refresh cached Wintergrasp team capacity from config
     void HandleCommand(uint32 type, std::string const text, Player* fromPlayer, std::string channelName = "");
     std::string const HandleRemoteCommand(std::string const request);
     void OnPlayerLogout(Player* player);
@@ -217,6 +218,7 @@ private:
     time_t RealPlayerLastTimeSeen = 0;
     time_t DelayLoginBotsTimer;
     time_t printStatsTimer;
+    uint32 wgTeamCapCache;  // Cached Wintergrasp team capacity from config
     uint32 AddRandomBots();
     bool ProcessBot(uint32 bot);
     void ScheduleRandomize(uint32 bot, uint32 time);

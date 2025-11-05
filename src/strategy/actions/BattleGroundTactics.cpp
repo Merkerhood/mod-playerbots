@@ -2026,18 +2026,20 @@ bool BGTactics::selectObjective(bool reset)
         workshopsControlled = 0;
 
         // Check workshop control through battlefield area data (real AzerothCore method)
-        if (bf->GetData(4538) == myTeam) workshopsControlled++; // AREA_THE_SUNKEN_RING (NE Workshop)
-        if (bf->GetData(4539) == myTeam) workshopsControlled++; // AREA_THE_BROKEN_TEMPLE (NW Workshop)
-        if (bf->GetData(4611) == myTeam) workshopsControlled++; // AREA_WESTSPARK_WORKSHOP (SW Workshop)
-        if (bf->GetData(4612) == myTeam) workshopsControlled++; // AREA_EASTSPARK_WORKSHOP (SE Workshop)
+        // Note: GetData() for area control returns TeamId (0=TEAM_ALLIANCE, 1=TEAM_HORDE)
+        uint32 teamIdData = static_cast<uint32>(myTeam); // Convert TeamId enum to uint32 for comparison
+        if (bf->GetData(AREA_THE_SUNKEN_RING) == teamIdData) workshopsControlled++; // NE Workshop
+        if (bf->GetData(AREA_THE_BROKEN_TEMPLE) == teamIdData) workshopsControlled++; // NW Workshop
+        if (bf->GetData(AREA_WESTSPARK_WORKSHOP) == teamIdData) workshopsControlled++; // SW Workshop
+        if (bf->GetData(AREA_EASTSPARK_WORKSHOP) == teamIdData) workshopsControlled++; // SE Workshop
 
         // Fallback calculation if area data not available
         if (workshopsControlled == 0) {
-            // Use vehicle capacity as indicator of workshop control (each workshop adds +4 vehicles in AC)
+            // Use vehicle capacity as indicator of workshop control
             uint32 maxVehForTeam = (myTeam == TEAM_ALLIANCE) ?
                 bf->GetData(BATTLEFIELD_WG_DATA_MAX_VEHICLE_A) :
                 bf->GetData(BATTLEFIELD_WG_DATA_MAX_VEHICLE_H);
-            workshopsControlled = maxVehForTeam / 4; // Each workshop = 4 vehicles in AzerothCore
+            workshopsControlled = maxVehForTeam / WG_VEHICLES_PER_WORKSHOP; // Each workshop adds vehicle capacity
         }
 
         // Dynamic vehicle limits based on workshop control (each workshop = +2 vehicle capacity)
@@ -2354,23 +2356,27 @@ bool BGTactics::selectObjective(bool reset)
             Unit* bestVehicle = nullptr;
             float bestVehDist = FLT_MAX;
 
-            for (ObjectGuid const& vg : nearVehicles)
+            for (ObjectGuid const& vehicleGuid : nearVehicles)
             {
-                Unit* v = botAI->GetUnit(vg);
-                if (!v || !v->IsFriendlyTo(bot) || v->GetVehicleKit()->GetAvailableSeatCount() == 0)
+                Unit* vehicle = botAI->GetUnit(vehicleGuid);
+                if (!vehicle || !vehicle->IsFriendlyTo(bot))
                     continue;
 
-                uint32 entry = v->GetEntry();
+                Vehicle* vehicleKit = vehicle->GetVehicleKit();
+                if (!vehicleKit || vehicleKit->GetAvailableSeatCount() == 0)
+                    continue;
+
+                uint32 entry = vehicle->GetEntry();
                 // Only consider siege vehicles
                 if (entry != WG_ENTRY_SIEGE_ENGINE_A && entry != WG_ENTRY_SIEGE_ENGINE_H &&
                     entry != WG_ENTRY_DEMOLISHER && entry != WG_ENTRY_CATAPULT)
                     continue;
 
-                float d = bot->GetDistance(v);
-                if (d < bestVehDist && d < 150.0f)
+                float distance = bot->GetDistance(vehicle);
+                if (distance < bestVehDist && distance < 150.0f)
                 {
-                    bestVehDist = d;
-                    bestVehicle = v;
+                    bestVehDist = distance;
+                    bestVehicle = vehicle;
                 }
             }
 
@@ -2389,28 +2395,28 @@ bool BGTactics::selectObjective(bool reset)
             float bestDist = FLT_MAX;
             bool shouldEscort = false;
 
-            for (ObjectGuid const& vg : vehs)
+            for (ObjectGuid const& vehicleGuid : vehs)
             {
-                Unit* v = botAI->GetUnit(vg);
-                if (!v)
+                Unit* vehicle = botAI->GetUnit(vehicleGuid);
+                if (!vehicle)
                     continue;
 
-                float d = bot->GetDistance(v);
-                bool isFriendly = v->IsFriendlyTo(bot);
-                uint32 entry = v->GetEntry();
+                float distance = bot->GetDistance(vehicle);
+                bool isFriendly = vehicle->IsFriendlyTo(bot);
+                uint32 entry = vehicle->GetEntry();
 
                 // Target enemy vehicles for destruction
-                if (!isFriendly && d < 250.0f)
+                if (!isFriendly && distance < 250.0f)
                 {
-                    if (d < bestDist)
+                    if (distance < bestDist)
                     {
-                        bestDist = d;
-                        targetVehicle = v;
+                        bestDist = distance;
+                        targetVehicle = vehicle;
                         shouldEscort = false;
                     }
                 }
                 // Enhanced escort for friendly siege engines with coordination
-                else if (isFriendly && d < 200.0f && !isDefender &&
+                else if (isFriendly && distance < 200.0f && !isDefender &&
                          (entry == WG_ENTRY_SIEGE_ENGINE_A || entry == WG_ENTRY_SIEGE_ENGINE_H || entry == WG_ENTRY_DEMOLISHER))
                 {
                     // Count current escorts for this vehicle
@@ -2420,7 +2426,7 @@ bool BGTactics::selectObjective(bool reset)
                     {
                         if (Unit* ally = botAI->GetUnit(allyGuid))
                         {
-                            if (ally->GetDistance(v) < 50.0f && !ally->GetVehicle()) // Ally escorting this vehicle
+                            if (ally->GetDistance(vehicle) < 50.0f && !ally->GetVehicle()) // Ally escorting this vehicle
                                 currentEscorts++;
                         }
                     }
@@ -2432,10 +2438,10 @@ bool BGTactics::selectObjective(bool reset)
                     else if (isLateGame && currentEscorts < 3) // Late game needs more protection
                         shouldProvideEscort = (role % 6 == 5);
 
-                    if (shouldProvideEscort && d < bestDist)
+                    if (shouldProvideEscort && distance < bestDist)
                     {
-                        bestDist = d;
-                        targetVehicle = v;
+                        bestDist = distance;
+                        targetVehicle = vehicle;
                         shouldEscort = true;
                     }
                 }
@@ -2495,8 +2501,8 @@ bool BGTactics::selectObjective(bool reset)
         // Priority 6: Vehicle acquisition (rank-aware and workshop-limited)
         if (shouldUseVehicles && !bot->GetVehicle() && hasWGRank)
         {
-            // Get current team vehicle count
-            uint32 currentVehicles = isDefender ?
+            // Get current team vehicle count (based on bot's actual team, not defender status)
+            uint32 currentVehicles = (bot->GetTeamId() == TEAM_ALLIANCE) ?
                 bf->GetData(BATTLEFIELD_WG_DATA_VEHICLE_A) :
                 bf->GetData(BATTLEFIELD_WG_DATA_VEHICLE_H);
 
@@ -2507,13 +2513,13 @@ bool BGTactics::selectObjective(bool reset)
                 Unit* bestVehicle = nullptr;
                 float bestVehDist = FLT_MAX;
 
-                for (ObjectGuid const& vg : nearVehicles)
+                for (ObjectGuid const& vehicleGuid : nearVehicles)
                 {
-                    Unit* v = botAI->GetUnit(vg);
-                    if (!v || !v->IsFriendlyTo(bot))
+                    Unit* vehicle = botAI->GetUnit(vehicleGuid);
+                    if (!vehicle || !vehicle->IsFriendlyTo(bot))
                         continue;
 
-                    uint32 entry = v->GetEntry();
+                    uint32 entry = vehicle->GetEntry();
 
                     // Rank-based vehicle access control
                     bool canUseThisVehicle = false;
@@ -2525,11 +2531,11 @@ bool BGTactics::selectObjective(bool reset)
                     if (!canUseThisVehicle)
                         continue;
 
-                    float d = bot->GetDistance(v);
-                    if (d < bestVehDist && d < 100.0f)
+                    float distance = bot->GetDistance(vehicle);
+                    if (distance < bestVehDist && distance < 100.0f)
                     {
-                        bestVehDist = d;
-                        bestVehicle = v;
+                        bestVehDist = distance;
+                        bestVehicle = vehicle;
                     }
                 }
 
@@ -4559,10 +4565,6 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             case BATTLEGROUND_AB:
             case BATTLEGROUND_IC:
             {
-                // Special WG handling: Titan's Relic is a direct-use GO
-                if (handleWGTitansRelic(go, dist))
-                    return true;
-
                 // Prevent capturing from inside flag pole
                 if (dist == 0.0f)
                 {

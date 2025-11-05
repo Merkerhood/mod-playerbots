@@ -244,6 +244,10 @@ RandomPlayerbotMgr::RandomPlayerbotMgr() : PlayerbotHolder(), processTicks(0)
     BgCheckTimer = 0;
     LfgCheckTimer = 0;
     PlayersCheckTimer = 0;
+    WGCheckTimer = 0;
+
+    // Cache Wintergrasp team capacity to avoid repeated config lookups
+    wgTeamCapCache = sWorld->getIntConfig(CONFIG_WINTERGRASP_PLR_MAX);
 }
 
 RandomPlayerbotMgr::~RandomPlayerbotMgr() {}
@@ -1413,8 +1417,8 @@ void RandomPlayerbotMgr::CheckWGFill()
             return;
     }
 
-    // desired cap per team from worldserver config (same value BattlefieldWG uses)
-    const uint32 teamCap = sWorld->getIntConfig(CONFIG_WINTERGRASP_PLR_MAX);
+    // Use cached team cap value to avoid repeated config lookups
+    const uint32 teamCap = wgTeamCapCache;
 
     // WG level bracket (default 79-80)
     uint32 minLevel = 79;
@@ -1519,6 +1523,11 @@ void RandomPlayerbotMgr::ScheduleChangeStrategy(uint32 bot, uint32 time)
                      sPlayerbotAIConfig->maxRandomBotChangeStrategyTime);
 
     SetEventValue(bot, "change_strategy", 1, time);
+}
+
+void RandomPlayerbotMgr::RefreshWGTeamCapCache()
+{
+    wgTeamCapCache = sWorld->getIntConfig(CONFIG_WINTERGRASP_PLR_MAX);
 }
 
 bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
