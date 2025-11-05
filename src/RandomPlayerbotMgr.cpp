@@ -1405,9 +1405,12 @@ void RandomPlayerbotMgr::CheckWGFill()
             ++realInWG[t];
     }
 
-    // Only fill if at least one real player is present on any side
-    if (realInWG[TEAM_ALLIANCE] == 0 && realInWG[TEAM_HORDE] == 0)
-        return;
+    // Only fill if at least one real player is present, unless auto-join is enabled
+    if (!sPlayerbotAIConfig->randomBotAutoJoinWGQueue)
+    {
+        if (realInWG[TEAM_ALLIANCE] == 0 && realInWG[TEAM_HORDE] == 0)
+            return;
+    }
 
     // desired cap per team from worldserver config (same value BattlefieldWG uses)
     const uint32 teamCap = sWorld->getIntConfig(CONFIG_WINTERGRASP_PLR_MAX);
@@ -1686,7 +1689,7 @@ bool RandomPlayerbotMgr::ProcessBot(Player* bot)
     {
         idleBot = true;
     }
-    
+
     if (idleBot)
     {
         // randomize

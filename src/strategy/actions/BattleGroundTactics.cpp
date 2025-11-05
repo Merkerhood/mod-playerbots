@@ -1991,236 +1991,323 @@ bool BGTactics::selectObjective(bool reset)
     // Wintergrasp Battlefield objective selection (zone-driven)
     if (isWGZone)
     {
-        // Determine defender/attacker side
-        bool isDefender = false;
-        if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
-            isDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
+        Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);
+        if (!bf)
+            return false;
+
+        // Determine defender/attacker side and battle state
+        bool isDefender = (bf->GetDefenderTeam() == bot->GetTeamId());
+        bool isWarTime = bf->IsWarTime();
+        TeamId team = bot->GetTeamId();
+        uint32 role = context->GetValue<uint32>("bg role")->Get();
+
+        // WG Strategy system similar to other BGs
+        enum WGBotStrategy { WG_STRATEGY_BALANCED = 0, WG_STRATEGY_OFFENSIVE, WG_STRATEGY_DEFENSIVE };
+        WGBotStrategy strategy = static_cast<WGBotStrategy>(role % 3); // Simple strategy assignment
+
+        // Role distribution based on strategy (similar to AV/AB)
+        uint8 defendersProhab = 4; // Default balanced
+        switch (strategy)
+        {
+            case WG_STRATEGY_OFFENSIVE:
+                defendersProhab = (isDefender ? 6 : 2); // Defenders stay defensive, attackers go aggressive
+                break;
+            case WG_STRATEGY_DEFENSIVE:
+                defendersProhab = (isDefender ? 8 : 3); // Heavy defense for defenders, balanced for attackers
+                break;
+            case WG_STRATEGY_BALANCED:
+            default:
+                defendersProhab = 4;
+                break;
+        }
+
+        bool isDefensiveRole = (role % 10) < defendersProhab;
+        bool shouldUseVehicles = !isDefensiveRole || strategy == WG_STRATEGY_OFFENSIVE;
 
         // Try to push siege objectives; fall back to local PvP
-        // Gate push if friendly vehicles are massed (with some randomness to choose a side breach)
-        {
-            GuidVector nearbyVehicles = AI_VALUE(GuidVector, "nearest vehicles");
-            uint32 friendlyAtGate = 0;
-            for (ObjectGuid const& vg : nearbyVehicles)
-            {
-                Unit* v = botAI->GetUnit(vg);
-                if (!v || !v->IsFriendlyTo(bot))
-                    continue;
-                if (v->GetDistance(WG_GATE_POS) < 200.0f)
-                    friendlyAtGate++;
-            }
-            if (friendlyAtGate >= 2)
-            {
-                // 25% chance to breach via a side lane instead of the main gate, to avoid predictable zergs
-                uint32 role = context->GetValue<uint32>("bg role")->Get();
-                bool sideBreach = urand(0, 99) < 25;
-                if (!sideBreach)
-                {
-                    PositionInfo& siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
-                    pos.Set(WG_GATE_POS.GetPositionX(), WG_GATE_POS.GetPositionY(), WG_GATE_POS.GetPositionZ(), bot->GetMapId());
-                    posMap["bg objective"] = pos;
-                    siege.Set(pos.x, pos.y, pos.z, pos.mapId);
-                    return true;
-                }
-                // choose a side tower as breach point based on role
-                Position breach = (role % 2 == 0 ? WG_TOWER_W_POS : WG_TOWER_E_POS);
-                pos.Set(breach.GetPositionX(), breach.GetPositionY(), breach.GetPositionZ(), bot->GetMapId());
-                posMap["bg objective"] = pos;
-                return true;
-            }
-        }
-
-        // Defenders: intercept nearest enemy vehicle
-        if (isDefender)
-        {
-            GuidVector vehs = AI_VALUE(GuidVector, "nearest vehicles");
-            Unit* enemyVeh = nullptr;
-            float evDist = FLT_MAX;
-            for (ObjectGuid const& vg : vehs)
-            {
-                Unit* v = botAI->GetUnit(vg);
-                if (!v || v->IsFriendlyTo(bot))
-                    continue;
-                float d = bot->GetDistance(v);
-                if (d < evDist)
-                {
-                    evDist = d;
-                    enemyVeh = v;
-                }
-            }
-            if (enemyVeh && evDist < 250.0f)
-            {
-                pos.Set(enemyVeh->GetPositionX(), enemyVeh->GetPositionY(), enemyVeh->GetPositionZ(), bot->GetMapId());
-                posMap["bg objective"] = pos;
-                context->GetValue<Unit*>("current target")->Set(enemyVeh);
-                return true;
-            }
-        }
-
-        // Defenders: if gate pressure is low, send strike teams to attacker towers to weaken attackers
-        if (isDefender)
-        {
-            GuidVector vehs = AI_VALUE(GuidVector, "nearest vehicles");
-            uint32 enemyAtGate = 0;
-            for (ObjectGuid const& vg : vehs)
-            {
-                Unit* v = botAI->GetUnit(vg);
-                if (!v || v->IsFriendlyTo(bot))
-                    continue;
-                if (v->GetDistance(WG_GATE_POS) < 200.0f)
-                    enemyAtGate++;
-            }
-
-            if (enemyAtGate < 2)
-            {
-                uint32 role = context->GetValue<uint32>("bg role")->Get();
-                Position strike = WG_TOWER_S_POS;
-                switch (role % 3)
-                {
-                    case 0: strike = WG_TOWER_W_POS; break;
-                    case 1: strike = WG_TOWER_S_POS; break;
-                    case 2: strike = WG_TOWER_E_POS; break;
-                }
-
-                // Prefer pushing towers with vehicles. If already in a vehicle, go straight to strike.
-                if (bot->GetVehicle())
-                {
-                    pos.Set(strike.GetPositionX(), strike.GetPositionY(), strike.GetPositionZ(), bot->GetMapId());
-                    posMap["bg objective"] = pos;
-                    return true;
-                }
-
-                // Seek nearest friendly vehicle suitable for a strike (Siege Engine / Demolisher)
-                Unit* bestVeh = nullptr;
-                float bestDist = FLT_MAX;
-                GuidVector nearVeh = AI_VALUE(GuidVector, "nearest vehicles");
-                for (ObjectGuid const& vg : nearVeh)
-                {
-                    Unit* v = botAI->GetUnit(vg);
-                    if (!v || !v->IsFriendlyTo(bot))
-                        continue;
-                    uint32 ve = v->GetEntry();
-                    if (ve != WG_ENTRY_SIEGE_ENGINE_A && ve != WG_ENTRY_SIEGE_ENGINE_H && ve != WG_ENTRY_DEMOLISHER)
-                        continue;
-                    float d = bot->GetDistance(v);
-                    if (d < bestDist)
-                    {
-                        bestDist = d;
-                        bestVeh = v;
-                    }
-                }
-
-                if (bestVeh)
-                {
-                    // Move to vehicle; EnterVehicleAction will handle boarding if seats are available
-                    pos.Set(bestVeh->GetPositionX(), bestVeh->GetPositionY(), bestVeh->GetPositionZ(), bot->GetMapId());
-                    posMap["bg objective"] = pos;
-                    return true;
-                }
-
-                // Fallback: move to tower on foot
-                pos.Set(strike.GetPositionX(), strike.GetPositionY(), strike.GetPositionZ(), bot->GetMapId());
-                posMap["bg objective"] = pos;
-                return true;
-            }
-        }
-
-        // Prefer nearby banners that are capturable
+        // Priority 1: Workshop Banner Control (highest priority - enables vehicle production)
         {
             GuidVector noLosObjects = AI_VALUE(GuidVector, "nearest game objects no los");
-            GameObject* nearestBanner = nullptr;
-            float bestBannerDist = FLT_MAX;
+            std::vector<GameObject*> contested_banners, neutral_banners, enemy_banners;
+
             for (ObjectGuid const& gid : noLosObjects)
             {
                 GameObject* go = botAI->GetGameObject(gid);
-                if (!go)
+                if (!go || std::find(vFlagsWG.begin(), vFlagsWG.end(), go->GetEntry()) == vFlagsWG.end())
                     continue;
-                if (std::find(vFlagsWG.begin(), vFlagsWG.end(), go->GetEntry()) == vFlagsWG.end())
+                if (go->GetEntry() == 192829) // Skip relic for now
                     continue;
-                if (go->GetEntry() == 192829) // Relic handled separately
+
+                float dist = bot->GetDistance(go);
+                if (dist > 300.0f) // Only consider nearby banners
                     continue;
+
                 bool canUse = bot->CanUseBattlegroundObject(go);
-                float d = bot->GetDistance(go);
-                if ((canUse && d < bestBannerDist) || (!nearestBanner && d < bestBannerDist))
+                if (canUse)
                 {
-                    bestBannerDist = d;
-                    nearestBanner = go;
+                    // Determine banner state by checking interaction availability
+                    contested_banners.push_back(go);
+                }
+                else
+                {
+                    enemy_banners.push_back(go);
                 }
             }
-            if (nearestBanner)
+
+            // Prioritize: contested > enemy > neutral
+            GameObject* targetBanner = nullptr;
+            if (!contested_banners.empty())
+                targetBanner = contested_banners[urand(0, contested_banners.size() - 1)];
+            else if (!enemy_banners.empty() && !isDefensiveRole)
+                targetBanner = enemy_banners[urand(0, enemy_banners.size() - 1)];
+
+            if (targetBanner)
             {
-                pos.Set(nearestBanner->GetPositionX(), nearestBanner->GetPositionY(), nearestBanner->GetPositionZ(), bot->GetMapId());
+                pos.Set(targetBanner->GetPositionX(), targetBanner->GetPositionY(), targetBanner->GetPositionZ(), bot->GetMapId());
                 posMap["bg objective"] = pos;
                 return true;
             }
         }
 
-        // If close to relic, go for it
-        if (bot->GetDistance(WG_RELIC_POS) < 200.0f)
+        // Priority 2: Vehicle-based siege assault/defense
         {
-            pos.Set(WG_RELIC_POS.GetPositionX(), WG_RELIC_POS.GetPositionY(), WG_RELIC_POS.GetPositionZ(), bot->GetMapId());
-            posMap["bg objective"] = pos;
-            PositionInfo& siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
-            siege.Set(pos.x, pos.y, pos.z, pos.mapId);
-            return true;
+            GuidVector nearbyVehicles = AI_VALUE(GuidVector, "nearest vehicles");
+            uint32 friendlyAtGate = 0, enemyAtGate = 0;
+
+            for (ObjectGuid const& vg : nearbyVehicles)
+            {
+                Unit* v = botAI->GetUnit(vg);
+                if (!v)
+                    continue;
+
+                float distToGate = v->GetDistance(WG_GATE_POS);
+                if (distToGate < 200.0f)
+                {
+                    if (v->IsFriendlyTo(bot))
+                        friendlyAtGate++;
+                    else
+                        enemyAtGate++;
+                }
+            }
+
+            // Attackers: coordinate siege push
+            if (!isDefender && shouldUseVehicles && friendlyAtGate >= 1)
+            {
+                // Strategy-based target selection
+                Position siegeTarget;
+                switch (strategy)
+                {
+                    case WG_STRATEGY_OFFENSIVE:
+                        siegeTarget = WG_GATE_POS; // Focus fire on gate
+                        break;
+                    case WG_STRATEGY_BALANCED:
+                        // Spread across multiple targets
+                        switch (role % 4)
+                        {
+                            case 0: case 1: siegeTarget = WG_GATE_POS; break;
+                            case 2: siegeTarget = WG_TOWER_W_POS; break;
+                            case 3: siegeTarget = WG_TOWER_E_POS; break;
+                        }
+                        break;
+                    case WG_STRATEGY_DEFENSIVE:
+                        siegeTarget = (role % 2 == 0) ? WG_TOWER_S_POS : WG_GATE_POS;
+                        break;
+                }
+
+                pos.Set(siegeTarget.GetPositionX(), siegeTarget.GetPositionY(), siegeTarget.GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+
+            // Defenders: counter-siege tactics
+            if (isDefender && enemyAtGate >= 1)
+            {
+                if (isDefensiveRole)
+                {
+                    // Defend the gate area
+                    float rx, ry, rz;
+                    bot->GetRandomPoint(WG_GATE_POS, 75.0f, rx, ry, rz);
+                    pos.Set(rx, ry, rz, bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
+                else
+                {
+                    // Counter-attack enemy siege positions
+                    Position counterTarget = (role % 2 == 0) ? WG_TOWER_W_POS : WG_TOWER_E_POS;
+                    pos.Set(counterTarget.GetPositionX(), counterTarget.GetPositionY(), counterTarget.GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
+            }
         }
 
-        // Escort role for attackers
-        uint32 role = context->GetValue<uint32>("bg role")->Get();
-        if (!isDefender && (role % 4 == 3))
+        // Priority 3: Vehicle hunting and escort (similar to AV/IC vehicle mechanics)
         {
-            GuidVector nearby = AI_VALUE(GuidVector, "nearest vehicles");
-            Unit* best = nullptr;
-            float bestd = FLT_MAX;
-            for (ObjectGuid const& vg : nearby)
+            GuidVector vehs = AI_VALUE(GuidVector, "nearest vehicles");
+            Unit* targetVehicle = nullptr;
+            float bestDist = FLT_MAX;
+            bool seekingFriendly = false;
+
+            // Choose vehicle target based on role and strategy
+            for (ObjectGuid const& vg : vehs)
+            {
+                Unit* v = botAI->GetUnit(vg);
+                if (!v)
+                    continue;
+
+                float d = bot->GetDistance(v);
+                bool isFriendly = v->IsFriendlyTo(bot);
+
+                // Defenders prioritize enemy vehicles for interception
+                if (isDefender && !isFriendly && d < 300.0f)
+                {
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        targetVehicle = v;
+                        seekingFriendly = false;
+                    }
+                }
+                // Escort role: follow friendly siege engines
+                else if (!isDefensiveRole && (role % 4 == 3) && isFriendly && d < 200.0f)
+                {
+                    uint32 entry = v->GetEntry();
+                    if (entry == WG_ENTRY_SIEGE_ENGINE_A || entry == WG_ENTRY_SIEGE_ENGINE_H || entry == WG_ENTRY_DEMOLISHER)
+                    {
+                        if (d < bestDist)
+                        {
+                            bestDist = d;
+                            targetVehicle = v;
+                            seekingFriendly = true;
+                        }
+                    }
+                }
+            }
+
+            if (targetVehicle)
+            {
+                if (seekingFriendly)
+                {
+                    // Follow friendly vehicle at escort distance
+                    float rx, ry, rz;
+                    bot->GetRandomPoint(targetVehicle->GetPosition(), frand(20.0f, 40.0f), rx, ry, rz);
+                    pos.Set(rx, ry, rz, bot->GetMapId());
+                }
+                else
+                {
+                    // Attack enemy vehicle
+                    pos.Set(targetVehicle->GetPositionX(), targetVehicle->GetPositionY(), targetVehicle->GetPositionZ(), bot->GetMapId());
+                    context->GetValue<Unit*>("current target")->Set(targetVehicle);
+                }
+                posMap["bg objective"] = pos;
+                return true;
+            }
+        }
+
+        // Continue to remaining priorities...
+
+        // Priority 4: Victory condition push (Titan's Relic - similar to AV boss mechanics)
+        if (!isDefender && bot->GetDistance(WG_RELIC_POS) < 300.0f)
+        {
+            // Only go for relic if we have enough support (like AV boss requirements)
+            uint32 friendlyNearRelic = 0;
+            GuidVector nearbyPlayers = AI_VALUE(GuidVector, "nearest friendly players");
+            for (ObjectGuid const& pg : nearbyPlayers)
+            {
+                Unit* p = botAI->GetUnit(pg);
+                if (p && p->GetDistance(WG_RELIC_POS) < 100.0f)
+                    friendlyNearRelic++;
+            }
+
+            if (friendlyNearRelic >= 2 || strategy == WG_STRATEGY_OFFENSIVE)
+            {
+                pos.Set(WG_RELIC_POS.GetPositionX(), WG_RELIC_POS.GetPositionY(), WG_RELIC_POS.GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+        }
+
+        // Priority 5: Enemy player engagement (similar to AB/EY enemy hunting)
+        if (urand(0, 99) < 15) // 15% chance for direct PvP engagement
+        {
+            if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
+            {
+                float dist = bot->GetDistance(enemy);
+                if (dist < 400.0f && dist > 50.0f) // Not too close, not too far
+                {
+                    pos.Set(enemy->GetPositionX(), enemy->GetPositionY(), enemy->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
+            }
+        }
+
+        // Priority 6: Vehicle acquisition (similar to IC vehicle spawns)
+        if (shouldUseVehicles && !bot->GetVehicle())
+        {
+            GuidVector nearVehicles = AI_VALUE(GuidVector, "nearest vehicles");
+            Unit* bestVehicle = nullptr;
+            float bestVehDist = FLT_MAX;
+
+            for (ObjectGuid const& vg : nearVehicles)
             {
                 Unit* v = botAI->GetUnit(vg);
                 if (!v || !v->IsFriendlyTo(bot))
                     continue;
-                uint32 ve = v->GetEntry();
-                if (ve != WG_ENTRY_SIEGE_ENGINE_A && ve != WG_ENTRY_SIEGE_ENGINE_H && ve != WG_ENTRY_CATAPULT && ve != WG_ENTRY_DEMOLISHER)
+
+                uint32 entry = v->GetEntry();
+                if (entry != WG_ENTRY_SIEGE_ENGINE_A && entry != WG_ENTRY_SIEGE_ENGINE_H &&
+                    entry != WG_ENTRY_DEMOLISHER && entry != WG_ENTRY_CATAPULT)
                     continue;
+
                 float d = bot->GetDistance(v);
-                if (d < bestd)
+                if (d < bestVehDist && d < 100.0f)
                 {
-                    bestd = d;
-                    best = v;
+                    bestVehDist = d;
+                    bestVehicle = v;
                 }
             }
-            if (best && bestd < 150.0f)
+
+            if (bestVehicle)
             {
-                pos.Set(best->GetPositionX(), best->GetPositionY(), best->GetPositionZ(), bot->GetMapId());
+                pos.Set(bestVehicle->GetPositionX(), bestVehicle->GetPositionY(), bestVehicle->GetPositionZ(), bot->GetMapId());
                 posMap["bg objective"] = pos;
                 return true;
             }
         }
 
-        // Choose siege objective
-        Position siegeTarget = WG_GATE_POS;
-        if (!isDefender)
+        // Priority 7: Fallback positioning (similar to other BG fallback logic)
+        Position fallbackTarget;
+        if (isDefender)
         {
-            if (role % 3 == 1)
-                siegeTarget = WG_TOWER_S_POS;
-            else if (role % 3 == 2)
-                siegeTarget = (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_W_POS : WG_TOWER_E_POS);
+            // Defenders spread around fortress
+            switch (role % 4)
+            {
+                case 0: fallbackTarget = WG_GATE_POS; break;
+                case 1: fallbackTarget = WG_RELIC_POS; break;
+                case 2: fallbackTarget = Position(5200.0f, 2900.0f, 420.0f, 0.0f); break; // North courtyard
+                case 3: fallbackTarget = Position(5200.0f, 2780.0f, 420.0f, 0.0f); break; // South courtyard
+            }
         }
         else
         {
-            siegeTarget = (role % 2 == 1) ? WG_GATE_POS : (bot->GetTeamId() == TEAM_ALLIANCE ? WG_TOWER_E_POS : WG_TOWER_W_POS);
+            // Attackers focus on siege positions
+            switch (role % 3)
+            {
+                case 0: fallbackTarget = WG_GATE_POS; break;
+                case 1: fallbackTarget = WG_TOWER_W_POS; break;
+                case 2: fallbackTarget = WG_TOWER_E_POS; break;
+            }
         }
 
-        if (isDefender && siegeTarget.GetPositionX() == WG_GATE_POS.GetPositionX() && !botAI->IsRanged(bot))
-        {
-            float ox = (role % 2 == 0 ? -12.0f : 12.0f);
-            float oy = (role % 3 == 0 ? -6.0f : 6.0f);
-            pos.Set(WG_GATE_POS.GetPositionX() + ox, WG_GATE_POS.GetPositionY() + oy, WG_GATE_POS.GetPositionZ(), bot->GetMapId());
-        }
-        else
-        {
-            pos.Set(siegeTarget.GetPositionX(), siegeTarget.GetPositionY(), siegeTarget.GetPositionZ(), bot->GetMapId());
-        }
+        // Add randomization to avoid clustering
+        float rx, ry, rz;
+        bot->GetRandomPoint(fallbackTarget, frand(30.0f, 60.0f), rx, ry, rz);
+        pos.Set(rx, ry, rz, bot->GetMapId());
         posMap["bg objective"] = pos;
         return true;
+    }
     }
     switch (bgType)
     {
@@ -4692,6 +4779,7 @@ bool WintergraspQueueAction::isUseful()
         return false;
     }
 
+    // Auto-queue requires the auto-join setting
     if (!sPlayerbotAIConfig->randomBotAutoJoinWGQueue)
     {
         LOG_DEBUG("playerbots", "WG queue gated: randomBotAutoJoinWGQueue=0 for bot {}", bot->GetName());
@@ -4777,7 +4865,8 @@ bool WintergraspEnterWarAction::isUseful()
         return false;
     }
 
-    // If auto-join queue is disabled, only fill when real players joined (present in WG)
+    // If auto-join is disabled, only fill when real players joined (present in WG)
+    // This implements the "join when players participate" behavior
     if (!sPlayerbotAIConfig->randomBotAutoJoinWGQueue)
     {
         std::shared_lock<std::shared_mutex> lock(*HashMapHolder<Player>::GetLock());
@@ -4807,6 +4896,7 @@ bool WintergraspEnterWarAction::isUseful()
             LOG_DEBUG("playerbots", "WG enter ok: {} real players detected in WG zone; bot {} may fill", realCount, bot->GetName());
         }
     }
+    // If auto-join is enabled, bots can join even without real players
 
     return true;
 }
