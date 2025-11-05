@@ -824,9 +824,12 @@ void PlayerbotAIConfig::loadWorldBuff()
         std::string token;
         while (std::getline(metaStream, token, ','))
         {
-            try {
+            try
+            {
                 ids.push_back(static_cast<uint32>(std::stoi(token)));
-            } catch (...) {
+            }
+            catch (...)
+            {
                 LOG_ERROR("playerbots", "Invalid meta token in [{}]", entry);
                 break;
             }
@@ -841,11 +844,14 @@ void PlayerbotAIConfig::loadWorldBuff()
         std::istringstream spellStream(spellPart);
         while (std::getline(spellStream, token, ','))
         {
-            try {
+            try
+            {
                 uint32 spellId = static_cast<uint32>(std::stoi(token));
                 worldBuff wb = { spellId, ids[0], ids[1], ids[2], ids[3], ids[4] };
                 worldBuffs.push_back(wb);
-            } catch (...) {
+            }
+            catch (...)
+            {
                 LOG_ERROR("playerbots", "Invalid spell ID in [{}]", entry);
             }
         }

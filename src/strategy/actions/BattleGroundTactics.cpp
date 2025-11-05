@@ -2034,7 +2034,8 @@ bool BGTactics::selectObjective(bool reset)
         if (bf->GetData(AREA_EASTSPARK_WORKSHOP) == teamIdData) workshopsControlled++; // SE Workshop
 
         // Fallback calculation if area data not available
-        if (workshopsControlled == 0) {
+        if (workshopsControlled == 0)
+        {
             // Use vehicle capacity as indicator of workshop control
             uint32 maxVehForTeam = (myTeam == TEAM_ALLIANCE) ?
                 bf->GetData(BATTLEFIELD_WG_DATA_MAX_VEHICLE_A) :
@@ -2053,7 +2054,8 @@ bool BGTactics::selectObjective(bool reset)
         bool relicAccessible = false;
 
         // Estimate fortress breach status based on battle progress and time
-        if (!isDefender) {
+        if (!isDefender)
+        {
             float progressEstimate = (1800.0f - timeRemaining) / 1800.0f; // 0.0 = start, 1.0 = end
             outerWallsDestroyed = (progressEstimate > 0.3f) || (brokenTowers >= 2);
             innerWallsDestroyed = (progressEstimate > 0.6f) || (brokenTowers >= 3);
@@ -2073,9 +2075,12 @@ bool BGTactics::selectObjective(bool reset)
 
         // Time-based urgency adjustments
         float urgencyMultiplier = 1.0f;
-        if (isLateGame) {
+        if (isLateGame)
+        {
             urgencyMultiplier = 2.0f; // Double priority weights in final 10 minutes
-        } else if (timeRemaining < 900) { // Last 15 minutes
+        }
+        else if (timeRemaining < 900) // Last 15 minutes
+        {
             urgencyMultiplier = 1.5f; // 50% increase in urgency
         }
 
