@@ -36,6 +36,19 @@
 #include "ObjectAccessor.h"
 #include "TravelMgr.h"
 
+// Wintergrasp Battlefield Data constants (from AzerothCore BattlefieldWG.h)
+enum WintergraspData
+{
+    BATTLEFIELD_WG_DATA_INTACT_TOWER_ATT,
+    BATTLEFIELD_WG_DATA_DAMAGED_TOWER_ATT,
+    BATTLEFIELD_WG_DATA_BROKEN_TOWER_ATT,
+    BATTLEFIELD_WG_DATA_MAX_VEHICLE_A,
+    BATTLEFIELD_WG_DATA_MAX_VEHICLE_H,
+    BATTLEFIELD_WG_DATA_VEHICLE_A,
+    BATTLEFIELD_WG_DATA_VEHICLE_H,
+    BATTLEFIELD_WG_DATA_MAX,
+};
+
 // common bg positions
 Position const WS_WAITING_POS_HORDE_1 = {944.981f, 1423.478f, 345.434f, 6.18f};
 Position const WS_WAITING_POS_HORDE_2 = {948.488f, 1459.834f, 343.066f, 6.27f};
@@ -2022,7 +2035,10 @@ bool BGTactics::selectObjective(bool reset)
         bool isLateGame = timeRemaining < 600;   // last 10 minutes
 
         // Count destroyed towers (affects attacker priorities)
-        uint32 towersRemaining = 3; // TODO: Query actual tower states if available
+        // Query actual WG attacker tower states from Battlefield data
+        uint32 intactTowers = bf->GetData(BATTLEFIELD_WG_DATA_INTACT_TOWER_ATT);
+        uint32 brokenTowers = bf->GetData(BATTLEFIELD_WG_DATA_BROKEN_TOWER_ATT);
+        uint32 towersRemaining = intactTowers;
         bool towersDestroyed = (towersRemaining == 0);
 
         // Role assignments based on team and strategy
