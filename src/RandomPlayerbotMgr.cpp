@@ -647,7 +647,7 @@ void RandomPlayerbotMgr::AssignAccountTypes()
     uint32 existingRndBotAccounts = 0;
     uint32 existingAddClassAccounts = 0;
 
-    for (const auto& [accountId, accountType] : currentAssignments)
+    for (auto const& [accountId, accountType] : currentAssignments)
     {
         if (accountType == 1) existingRndBotAccounts++;
         else if (accountType == 2) existingAddClassAccounts++;
@@ -702,7 +702,7 @@ void RandomPlayerbotMgr::AssignAccountTypes()
     }
 
     // Populate filtered account lists with ALL accounts of each type
-    for (const auto& [accountId, accountType] : currentAssignments)
+    for (auto const& [accountId, accountType] : currentAssignments)
     {
         if (accountType == 1) rndBotTypeAccounts.push_back(accountId);
         else if (accountType == 2) addClassTypeAccounts.push_back(accountId);
@@ -812,7 +812,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
         std::vector<CharacterInfo> allianceChars;
         std::vector<CharacterInfo> hordeChars;
 
-        for (const auto& charInfo : allCharacters)
+        for (auto const& charInfo : allCharacters)
         {
             if (IsAlliance(charInfo.rRace))
                 allianceChars.push_back(charInfo);
@@ -846,7 +846,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
         };
 
         // PHASE 1: Log-in Alliance bots up to allowedAllianceCount
-        for (const auto& charInfo : allianceChars)
+        for (auto const& charInfo : allianceChars)
         {
             if (!allowedAllianceCount)
                 break;
@@ -859,7 +859,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
         }
 
         // PHASE 2: Log-in Horde bots up to maxAllowedBotCount
-        for (const auto& charInfo : hordeChars)
+        for (auto const& charInfo : hordeChars)
         {
             if (!maxAllowedBotCount)
                 break;
@@ -869,7 +869,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
         }
 
         // PHASE 3: If maxAllowedBotCount wasn't reached, log-in more Alliance bots
-        for (const auto& charInfo : allianceChars)
+        for (auto const& charInfo : allianceChars)
         {
             if (!maxAllowedBotCount)
                 break;
@@ -1262,7 +1262,7 @@ void RandomPlayerbotMgr::CheckBgQueue()
 
 void RandomPlayerbotMgr::LogBattlegroundInfo()
 {
-    for (const auto& queueTypePair : BattlegroundData)
+    for (auto const& queueTypePair : BattlegroundData)
     {
         uint8 queueType = queueTypePair.first;
 
@@ -1270,7 +1270,7 @@ void RandomPlayerbotMgr::LogBattlegroundInfo()
 
         if (uint8 type = BattlegroundMgr::BGArenaType(queueTypeId))
         {
-            for (const auto& bracketIdPair : queueTypePair.second)
+            for (auto const& bracketIdPair : queueTypePair.second)
             {
                 auto& bgInfo = bracketIdPair.second;
                 if (bgInfo.minLevel == 0)
@@ -1320,7 +1320,7 @@ void RandomPlayerbotMgr::LogBattlegroundInfo()
                 break;
         }
 
-        for (const auto& bracketIdPair : queueTypePair.second)
+        for (auto const& bracketIdPair : queueTypePair.second)
         {
             auto& bgInfo = bracketIdPair.second;
             if (bgInfo.minLevel == 0)
@@ -1826,7 +1826,6 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation>&
         LOG_DEBUG("playerbots", "Cannot teleport bot {} - all locations removed by filter", bot->GetName().c_str());
         return;
     }
-
 
     PerformanceMonitorOperation* pmo = sPerformanceMonitor->start(PERF_MON_RNDBOT, "RandomTeleportByLocations");
 
@@ -2379,7 +2378,7 @@ void RandomPlayerbotMgr::RandomTeleportForLevel(Player* bot)
         // Pick a weighted city randomly, then a random banker in that city
         //   then teleport to that banker
         CityId selectedCity = weightedCities[urand(0, weightedCities.size() - 1)];
-        const auto& bankers = cityToBankers.at(selectedCity);
+        auto const& bankers = cityToBankers.at(selectedCity);
         uint32 selectedBankerEntry = bankers[urand(0, bankers.size() - 1)];
         auto locIt = bankerEntryToLocation.find(selectedBankerEntry);
         if (locIt != bankerEntryToLocation.end())
