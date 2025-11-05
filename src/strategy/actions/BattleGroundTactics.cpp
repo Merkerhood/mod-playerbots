@@ -35,8 +35,6 @@
 #include "ObjectAccessor.h"
 #include "TravelMgr.h"
 
-
-
 // common bg positions
 Position const WS_WAITING_POS_HORDE_1 = {944.981f, 1423.478f, 345.434f, 6.18f};
 Position const WS_WAITING_POS_HORDE_2 = {948.488f, 1459.834f, 343.066f, 6.27f};
