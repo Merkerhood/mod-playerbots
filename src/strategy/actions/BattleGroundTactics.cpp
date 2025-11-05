@@ -2001,155 +2001,320 @@ bool BGTactics::selectObjective(bool reset)
         TeamId team = bot->GetTeamId();
         uint32 role = context->GetValue<uint32>("bg role")->Get();
 
-        // WG Strategy system similar to other BGs
-        enum WGBotStrategy { WG_STRATEGY_BALANCED = 0, WG_STRATEGY_OFFENSIVE, WG_STRATEGY_DEFENSIVE };
-        WGBotStrategy strategy = static_cast<WGBotStrategy>(role % 3); // Simple strategy assignment
-
-        // Role distribution based on strategy (similar to AV/AB)
-        uint8 defendersProhab = 4; // Default balanced
-        switch (strategy)
+        if (!isWarTime)
         {
-            case WG_STRATEGY_OFFENSIVE:
-                defendersProhab = (isDefender ? 6 : 2); // Defenders stay defensive, attackers go aggressive
-                break;
-            case WG_STRATEGY_DEFENSIVE:
-                defendersProhab = (isDefender ? 8 : 3); // Heavy defense for defenders, balanced for attackers
-                break;
-            case WG_STRATEGY_BALANCED:
-            default:
-                defendersProhab = 4;
-                break;
+            // Not in battle - move to staging area
+            Position waitPos = isDefender ? WG_GATE_POS : WG_TOWER_S_POS;
+            float rx, ry, rz;
+            bot->GetRandomPoint(waitPos, 50.0f, rx, ry, rz);
+            pos.Set(rx, ry, rz, bot->GetMapId());
+            posMap["bg objective"] = pos;
+            return true;
         }
 
-        bool isDefensiveRole = (role % 10) < defendersProhab;
-        bool shouldUseVehicles = !isDefensiveRole || strategy == WG_STRATEGY_OFFENSIVE;
+        // WG Strategy system based on team objectives
+        enum WGBotStrategy { WG_STRATEGY_BALANCED = 0, WG_STRATEGY_OFFENSIVE, WG_STRATEGY_DEFENSIVE };
+        WGBotStrategy strategy = static_cast<WGBotStrategy>(role % 3);
 
-        // Try to push siege objectives; fall back to local PvP
-        // Priority 1: Workshop Banner Control (highest priority - enables vehicle production)
+        // Dynamic battle state analysis
+        uint32 timeRemaining = bf->GetTimer() / 1000; // seconds remaining
+        bool isEarlyGame = timeRemaining > 1200; // first 10 minutes
+        bool isLateGame = timeRemaining < 600;   // last 10 minutes
+
+        // Count destroyed towers (affects attacker priorities)
+        uint32 towersRemaining = 3; // TODO: Query actual tower states if available
+        bool towersDestroyed = (towersRemaining == 0);
+
+        // Role assignments based on team and strategy
+        uint8 workshopFocusProb = 3;  // Workshop cappers
+        uint8 towerDefenseProb = 2;   // Tower defenders (attackers only)
+        uint8 fortressAssaultProb = 3; // Direct fortress assault
+        uint8 pvpHunterProb = 2;      // PvP roamers
+
+        if (isDefender)
+        {
+            // Defenders: fortress defense, workshop control, tower destruction
+            switch (strategy)
+            {
+                case WG_STRATEGY_OFFENSIVE:
+                    workshopFocusProb = 2; towerDefenseProb = 0; fortressAssaultProb = 6; pvpHunterProb = 2;
+                    break;
+                case WG_STRATEGY_DEFENSIVE:
+                    workshopFocusProb = 1; towerDefenseProb = 0; fortressAssaultProb = 8; pvpHunterProb = 1;
+                    break;
+                case WG_STRATEGY_BALANCED:
+                default:
+                    workshopFocusProb = 3; towerDefenseProb = 0; fortressAssaultProb = 5; pvpHunterProb = 2;
+                    break;
+            }
+        }
+        else
+        {
+            // Attackers: workshop capture, tower defense, fortress assault
+            switch (strategy)
+            {
+                case WG_STRATEGY_OFFENSIVE:
+                    workshopFocusProb = 2;
+                    towerDefenseProb = towersDestroyed ? 0 : 1; // No point defending destroyed towers
+                    fortressAssaultProb = 6; pvpHunterProb = 1;
+                    break;
+                case WG_STRATEGY_DEFENSIVE:
+                    workshopFocusProb = 4;
+                    towerDefenseProb = towersDestroyed ? 0 : 3;
+                    fortressAssaultProb = 2; pvpHunterProb = 1;
+                    break;
+                case WG_STRATEGY_BALANCED:
+                default:
+                    workshopFocusProb = 3;
+                    towerDefenseProb = towersDestroyed ? 0 : 2;
+                    fortressAssaultProb = 4; pvpHunterProb = 1;
+                    break;
+            }
+        }
+
+        // Determine bot's role based on probabilities
+        uint32 roleType = role % 10;
+        bool isWorkshopCapper = roleType < workshopFocusProb;
+        bool isTowerDefender = !isWorkshopCapper && roleType < (workshopFocusProb + towerDefenseProb);
+        bool isFortressAssaulter = !isWorkshopCapper && !isTowerDefender && roleType < (workshopFocusProb + towerDefenseProb + fortressAssaultProb);
+        bool isPvpHunter = !isWorkshopCapper && !isTowerDefender && !isFortressAssaulter;
+
+        // Late game override: everyone focuses on victory condition
+        if (isLateGame)
+        {
+            if (isDefender)
+            {
+                isFortressAssaulter = true; // All defenders protect relic
+                isWorkshopCapper = false; isTowerDefender = false; isPvpHunter = false;
+            }
+            else
+            {
+                isFortressAssaulter = true; // All attackers push relic
+                isWorkshopCapper = false; isTowerDefender = false; isPvpHunter = false;
+            }
+        }
+
+        // Priority 1: Workshop Control (Essential for vehicle production)
+        if (isWorkshopCapper || (isEarlyGame && urand(0, 2) == 0))
         {
             GuidVector noLosObjects = AI_VALUE(GuidVector, "nearest game objects no los");
-            std::vector<GameObject*> contested_banners, neutral_banners, enemy_banners;
+            std::vector<GameObject*> workshop_banners;
 
             for (ObjectGuid const& gid : noLosObjects)
             {
                 GameObject* go = botAI->GetGameObject(gid);
                 if (!go || std::find(vFlagsWG.begin(), vFlagsWG.end(), go->GetEntry()) == vFlagsWG.end())
                     continue;
-                if (go->GetEntry() == 192829) // Skip relic for now
+                if (go->GetEntry() == 192829) // Skip relic
                     continue;
 
                 float dist = bot->GetDistance(go);
-                if (dist > 300.0f) // Only consider nearby banners
+                if (dist > 400.0f) // Extended range for workshop hunting
                     continue;
 
-                bool canUse = bot->CanUseBattlegroundObject(go);
-                if (canUse)
+                // Check if this workshop is capturable
+                bool canCapture = bot->CanUseBattlegroundObject(go);
+                // Include contested/enemy workshops as valid targets
+                if (canCapture || !go->IsFriendlyTo(bot))
                 {
-                    // Determine banner state by checking interaction availability
-                    contested_banners.push_back(go);
-                }
-                else
-                {
-                    enemy_banners.push_back(go);
+                    workshop_banners.push_back(go);
                 }
             }
 
-            // Prioritize: contested > enemy > neutral
-            GameObject* targetBanner = nullptr;
-            if (!contested_banners.empty())
-                targetBanner = contested_banners[urand(0, contested_banners.size() - 1)];
-            else if (!enemy_banners.empty() && !isDefensiveRole)
-                targetBanner = enemy_banners[urand(0, enemy_banners.size() - 1)];
-
-            if (targetBanner)
+            if (!workshop_banners.empty())
             {
-                pos.Set(targetBanner->GetPositionX(), targetBanner->GetPositionY(), targetBanner->GetPositionZ(), bot->GetMapId());
-                posMap["bg objective"] = pos;
-                return true;
+                // Prioritize workshops closer to enemy base for attackers, closer to friendly base for defenders
+                GameObject* bestWorkshop = nullptr;
+                float bestScore = -1.0f;
+
+                for (GameObject* workshop : workshop_banners)
+                {
+                    float distToGate = workshop->GetDistance(WG_GATE_POS);
+                    float score;
+
+                    if (isDefender)
+                        score = 500.0f - distToGate; // Defenders prefer workshops near gate
+                    else
+                        score = distToGate; // Attackers prefer workshops far from gate (captured ones)
+
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestWorkshop = workshop;
+                    }
+                }
+
+                if (bestWorkshop)
+                {
+                    pos.Set(bestWorkshop->GetPositionX(), bestWorkshop->GetPositionY(), bestWorkshop->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
             }
         }
 
-        // Priority 2: Vehicle-based siege assault/defense
+        // Priority 2: Tower Defense/Destruction (Attackers defend towers, Defenders destroy towers)
+        if (isTowerDefender && !towersDestroyed)
         {
-            GuidVector nearbyVehicles = AI_VALUE(GuidVector, "nearest vehicles");
-            uint32 friendlyAtGate = 0, enemyAtGate = 0;
-
-            for (ObjectGuid const& vg : nearbyVehicles)
+            // Attackers: Defend towers from destruction (provides damage buff)
+            if (!isDefender)
             {
-                Unit* v = botAI->GetUnit(vg);
-                if (!v)
-                    continue;
+                std::vector<Position> towerPositions = { WG_TOWER_W_POS, WG_TOWER_S_POS, WG_TOWER_E_POS };
+                Position targetTower = towerPositions[role % towerPositions.size()];
 
-                float distToGate = v->GetDistance(WG_GATE_POS);
-                if (distToGate < 200.0f)
+                // Check for enemies near tower
+                bool enemiesNearTower = false;
+                GuidVector nearbyEnemies = AI_VALUE(GuidVector, "nearest hostile players");
+                for (ObjectGuid const& eg : nearbyEnemies)
                 {
-                    if (v->IsFriendlyTo(bot))
-                        friendlyAtGate++;
-                    else
-                        enemyAtGate++;
-                }
-            }
-
-            // Attackers: coordinate siege push
-            if (!isDefender && shouldUseVehicles && friendlyAtGate >= 1)
-            {
-                // Strategy-based target selection
-                Position siegeTarget;
-                switch (strategy)
-                {
-                    case WG_STRATEGY_OFFENSIVE:
-                        siegeTarget = WG_GATE_POS; // Focus fire on gate
+                    Unit* enemy = botAI->GetUnit(eg);
+                    if (enemy && enemy->GetDistance(targetTower) < 100.0f)
+                    {
+                        enemiesNearTower = true;
                         break;
-                    case WG_STRATEGY_BALANCED:
-                        // Spread across multiple targets
-                        switch (role % 4)
-                        {
-                            case 0: case 1: siegeTarget = WG_GATE_POS; break;
-                            case 2: siegeTarget = WG_TOWER_W_POS; break;
-                            case 3: siegeTarget = WG_TOWER_E_POS; break;
-                        }
-                        break;
-                    case WG_STRATEGY_DEFENSIVE:
-                        siegeTarget = (role % 2 == 0) ? WG_TOWER_S_POS : WG_GATE_POS;
-                        break;
+                    }
                 }
 
-                pos.Set(siegeTarget.GetPositionX(), siegeTarget.GetPositionY(), siegeTarget.GetPositionZ(), bot->GetMapId());
-                posMap["bg objective"] = pos;
-                return true;
-            }
-
-            // Defenders: counter-siege tactics
-            if (isDefender && enemyAtGate >= 1)
-            {
-                if (isDefensiveRole)
+                if (enemiesNearTower || isEarlyGame)
                 {
-                    // Defend the gate area
                     float rx, ry, rz;
-                    bot->GetRandomPoint(WG_GATE_POS, 75.0f, rx, ry, rz);
+                    bot->GetRandomPoint(targetTower, 40.0f, rx, ry, rz);
                     pos.Set(rx, ry, rz, bot->GetMapId());
                     posMap["bg objective"] = pos;
                     return true;
                 }
-                else
-                {
-                    // Counter-attack enemy siege positions
-                    Position counterTarget = (role % 2 == 0) ? WG_TOWER_W_POS : WG_TOWER_E_POS;
-                    pos.Set(counterTarget.GetPositionX(), counterTarget.GetPositionY(), counterTarget.GetPositionZ(), bot->GetMapId());
-                    posMap["bg objective"] = pos;
-                    return true;
-                }
+            }
+            // Defenders: Attack enemy towers to remove their buff and reduce battle time
+            else
+            {
+                std::vector<Position> towerPositions = { WG_TOWER_W_POS, WG_TOWER_S_POS, WG_TOWER_E_POS };
+                Position targetTower = towerPositions[role % towerPositions.size()];
+
+                pos.Set(targetTower.GetPositionX(), targetTower.GetPositionY(), targetTower.GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
             }
         }
 
-        // Priority 3: Vehicle hunting and escort (similar to AV/IC vehicle mechanics)
+        // Priority 3: Fortress Assault/Defense (Main objective push)
+        if (isFortressAssaulter)
+        {
+            if (!isDefender)
+            {
+                // Attackers: Progressive fortress assault
+                // Check distance to different fortress layers to determine current objective
+                float distToOuterWall = bot->GetDistance(WG_GATE_POS);
+                float distToRelic = bot->GetDistance(WG_RELIC_POS);
+
+                Position assaultTarget;
+                if (distToRelic < 150.0f)
+                {
+                    // Close to relic - go for victory
+                    assaultTarget = WG_RELIC_POS;
+                }
+                else if (distToOuterWall < 200.0f)
+                {
+                    // Breach the walls
+                    assaultTarget = WG_GATE_POS;
+                }
+                else
+                {
+                    // Approach the fortress
+                    switch (role % 3)
+                    {
+                        case 0: assaultTarget = Position(5200.0f, 2840.0f, 420.0f, 0.0f); break; // West approach
+                        case 1: assaultTarget = WG_GATE_POS; break; // Center approach
+                        case 2: assaultTarget = Position(5280.0f, 2840.0f, 420.0f, 0.0f); break; // East approach
+                    }
+                }
+
+                float rx, ry, rz;
+                bot->GetRandomPoint(assaultTarget, 25.0f, rx, ry, rz);
+                pos.Set(rx, ry, rz, bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+            else
+            {
+                // Defenders: Multi-layered defense
+                float distToGate = bot->GetDistance(WG_GATE_POS);
+                float distToRelic = bot->GetDistance(WG_RELIC_POS);
+
+                Position defenseTarget;
+                if (distToRelic < 100.0f)
+                {
+                    // Last stand at relic
+                    defenseTarget = WG_RELIC_POS;
+                }
+                else if (distToGate < 150.0f)
+                {
+                    // Defend the gate/courtyard
+                    switch (role % 4)
+                    {
+                        case 0: defenseTarget = Position(5180.0f, 2840.0f, 420.0f, 0.0f); break; // West courtyard
+                        case 1: defenseTarget = WG_GATE_POS; break; // Main gate
+                        case 2: defenseTarget = Position(5300.0f, 2840.0f, 420.0f, 0.0f); break; // East courtyard
+                        case 3: defenseTarget = Position(5240.0f, 2780.0f, 420.0f, 0.0f); break; // South courtyard
+                    }
+                }
+                else
+                {
+                    // Forward defense - harass attackers
+                    defenseTarget = Position(5240.0f + frand(-50.0f, 50.0f), 2700.0f + frand(-30.0f, 30.0f),
+                                           WG_GATE_POS.GetPositionZ(), 0.0f);
+                }
+
+                float rx, ry, rz;
+                bot->GetRandomPoint(defenseTarget, 30.0f, rx, ry, rz);
+                pos.Set(rx, ry, rz, bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+        }
+
+        // Priority 4: Vehicle Operations (Acquire and use siege vehicles)
+        if (!bot->GetVehicle() && urand(0, 3) == 0)
+        {
+            // Try to acquire a vehicle if we need one
+            GuidVector nearVehicles = AI_VALUE(GuidVector, "nearest vehicles");
+            Unit* bestVehicle = nullptr;
+            float bestVehDist = FLT_MAX;
+
+            for (ObjectGuid const& vg : nearVehicles)
+            {
+                Unit* v = botAI->GetUnit(vg);
+                if (!v || !v->IsFriendlyTo(bot) || v->GetVehicleKit()->GetAvailableSeatCount() == 0)
+                    continue;
+
+                uint32 entry = v->GetEntry();
+                // Only consider siege vehicles
+                if (entry != WG_ENTRY_SIEGE_ENGINE_A && entry != WG_ENTRY_SIEGE_ENGINE_H &&
+                    entry != WG_ENTRY_DEMOLISHER && entry != WG_ENTRY_CATAPULT)
+                    continue;
+
+                float d = bot->GetDistance(v);
+                if (d < bestVehDist && d < 150.0f)
+                {
+                    bestVehDist = d;
+                    bestVehicle = v;
+                }
+            }
+
+            if (bestVehicle)
+            {
+                pos.Set(bestVehicle->GetPositionX(), bestVehicle->GetPositionY(), bestVehicle->GetPositionZ(), bot->GetMapId());
+                posMap["bg objective"] = pos;
+                return true;
+            }
+        }
+
+        // Priority 5: Vehicle Combat (Hunt enemy vehicles or escort friendlies)
         {
             GuidVector vehs = AI_VALUE(GuidVector, "nearest vehicles");
             Unit* targetVehicle = nullptr;
             float bestDist = FLT_MAX;
-            bool seekingFriendly = false;
+            bool shouldEscort = false;
 
-            // Choose vehicle target based on role and strategy
             for (ObjectGuid const& vg : vehs)
             {
                 Unit* v = botAI->GetUnit(vg);
@@ -2158,40 +2323,38 @@ bool BGTactics::selectObjective(bool reset)
 
                 float d = bot->GetDistance(v);
                 bool isFriendly = v->IsFriendlyTo(bot);
+                uint32 entry = v->GetEntry();
 
-                // Defenders prioritize enemy vehicles for interception
-                if (isDefender && !isFriendly && d < 300.0f)
+                // Target enemy vehicles for destruction
+                if (!isFriendly && d < 250.0f)
                 {
                     if (d < bestDist)
                     {
                         bestDist = d;
                         targetVehicle = v;
-                        seekingFriendly = false;
+                        shouldEscort = false;
                     }
                 }
-                // Escort role: follow friendly siege engines
-                else if (!isDefensiveRole && (role % 4 == 3) && isFriendly && d < 200.0f)
+                // Escort friendly siege engines
+                else if (isFriendly && d < 150.0f && !isDefender &&
+                         (entry == WG_ENTRY_SIEGE_ENGINE_A || entry == WG_ENTRY_SIEGE_ENGINE_H || entry == WG_ENTRY_DEMOLISHER))
                 {
-                    uint32 entry = v->GetEntry();
-                    if (entry == WG_ENTRY_SIEGE_ENGINE_A || entry == WG_ENTRY_SIEGE_ENGINE_H || entry == WG_ENTRY_DEMOLISHER)
+                    if (d < bestDist && (role % 5 == 4)) // Only some bots escort
                     {
-                        if (d < bestDist)
-                        {
-                            bestDist = d;
-                            targetVehicle = v;
-                            seekingFriendly = true;
-                        }
+                        bestDist = d;
+                        targetVehicle = v;
+                        shouldEscort = true;
                     }
                 }
             }
 
             if (targetVehicle)
             {
-                if (seekingFriendly)
+                if (shouldEscort)
                 {
                     // Follow friendly vehicle at escort distance
                     float rx, ry, rz;
-                    bot->GetRandomPoint(targetVehicle->GetPosition(), frand(20.0f, 40.0f), rx, ry, rz);
+                    bot->GetRandomPoint(targetVehicle->GetPosition(), frand(25.0f, 45.0f), rx, ry, rz);
                     pos.Set(rx, ry, rz, bot->GetMapId());
                 }
                 else
@@ -2202,44 +2365,6 @@ bool BGTactics::selectObjective(bool reset)
                 }
                 posMap["bg objective"] = pos;
                 return true;
-            }
-        }
-
-        // Continue to remaining priorities...
-
-        // Priority 4: Victory condition push (Titan's Relic - similar to AV boss mechanics)
-        if (!isDefender && bot->GetDistance(WG_RELIC_POS) < 300.0f)
-        {
-            // Only go for relic if we have enough support (like AV boss requirements)
-            uint32 friendlyNearRelic = 0;
-            GuidVector nearbyPlayers = AI_VALUE(GuidVector, "nearest friendly players");
-            for (ObjectGuid const& pg : nearbyPlayers)
-            {
-                Unit* p = botAI->GetUnit(pg);
-                if (p && p->GetDistance(WG_RELIC_POS) < 100.0f)
-                    friendlyNearRelic++;
-            }
-
-            if (friendlyNearRelic >= 2 || strategy == WG_STRATEGY_OFFENSIVE)
-            {
-                pos.Set(WG_RELIC_POS.GetPositionX(), WG_RELIC_POS.GetPositionY(), WG_RELIC_POS.GetPositionZ(), bot->GetMapId());
-                posMap["bg objective"] = pos;
-                return true;
-            }
-        }
-
-        // Priority 5: Enemy player engagement (similar to AB/EY enemy hunting)
-        if (urand(0, 99) < 15) // 15% chance for direct PvP engagement
-        {
-            if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
-            {
-                float dist = bot->GetDistance(enemy);
-                if (dist < 400.0f && dist > 50.0f) // Not too close, not too far
-                {
-                    pos.Set(enemy->GetPositionX(), enemy->GetPositionY(), enemy->GetPositionZ(), bot->GetMapId());
-                    posMap["bg objective"] = pos;
-                    return true;
-                }
             }
         }
 
@@ -2277,36 +2402,85 @@ bool BGTactics::selectObjective(bool reset)
             }
         }
 
-        // Priority 7: Fallback positioning (similar to other BG fallback logic)
-        Position fallbackTarget;
-        if (isDefender)
+        // Priority 7: Enemy player hunting and disruption
+        if (urand(0, 99) < 25) // 25% chance for direct PvP engagement
         {
-            // Defenders spread around fortress
-            switch (role % 4)
+            if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
             {
-                case 0: fallbackTarget = WG_GATE_POS; break;
-                case 1: fallbackTarget = WG_RELIC_POS; break;
-                case 2: fallbackTarget = Position(5200.0f, 2900.0f, 420.0f, 0.0f); break; // North courtyard
-                case 3: fallbackTarget = Position(5200.0f, 2780.0f, 420.0f, 0.0f); break; // South courtyard
-            }
-        }
-        else
-        {
-            // Attackers focus on siege positions
-            switch (role % 3)
-            {
-                case 0: fallbackTarget = WG_GATE_POS; break;
-                case 1: fallbackTarget = WG_TOWER_W_POS; break;
-                case 2: fallbackTarget = WG_TOWER_E_POS; break;
+                float dist = bot->GetDistance(enemy);
+                if (dist < 350.0f && dist > 40.0f)
+                {
+                    pos.Set(enemy->GetPositionX(), enemy->GetPositionY(), enemy->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
             }
         }
 
-        // Add randomization to avoid clustering
-        float rx, ry, rz;
-        bot->GetRandomPoint(fallbackTarget, frand(30.0f, 60.0f), rx, ry, rz);
-        pos.Set(rx, ry, rz, bot->GetMapId());
-        posMap["bg objective"] = pos;
-        return true;
+        // Priority 8: Patrol routes and fallback positioning
+        {
+            float x, y, z;
+            if (isDefender)
+            {
+                // Defenders patrol around keep and walls
+                int patrolType = role % 4;
+                switch (patrolType)
+                {
+                    case 0: // Keep patrol
+                        x = 5266.0f + frand(-50.0f, 50.0f);
+                        y = 2838.0f + frand(-50.0f, 50.0f);
+                        z = 409.0f;
+                        break;
+                    case 1: // Wall patrol
+                        x = 5328.0f + frand(-100.0f, 100.0f);
+                        y = 2827.0f + frand(-80.0f, 80.0f);
+                        z = 409.0f;
+                        break;
+                    case 2: // North courtyard
+                        x = 5200.0f + frand(-75.0f, 75.0f);
+                        y = 2900.0f + frand(-60.0f, 60.0f);
+                        z = 420.0f;
+                        break;
+                    default: // South courtyard
+                        x = 5200.0f + frand(-75.0f, 75.0f);
+                        y = 2780.0f + frand(-60.0f, 60.0f);
+                        z = 420.0f;
+                        break;
+                }
+            }
+            else
+            {
+                // Attackers spread across battlefield approaches
+                int patrolType = role % 4;
+                switch (patrolType)
+                {
+                    case 0: // Western approach
+                        x = 5140.0f + frand(-100.0f, 50.0f);
+                        y = 2750.0f + frand(-120.0f, 120.0f);
+                        z = 390.0f;
+                        break;
+                    case 1: // Eastern approach
+                        x = 5450.0f + frand(-50.0f, 100.0f);
+                        y = 2750.0f + frand(-120.0f, 120.0f);
+                        z = 390.0f;
+                        break;
+                    case 2: // Southern staging area
+                        x = 5300.0f + frand(-150.0f, 150.0f);
+                        y = 2500.0f + frand(-100.0f, 100.0f);
+                        z = 390.0f;
+                        break;
+                    default: // Central advance
+                        x = 5300.0f + frand(-100.0f, 100.0f);
+                        y = 2650.0f + frand(-80.0f, 80.0f);
+                        z = 390.0f;
+                        break;
+                }
+            }
+
+            pos.Set(x, y, z, bot->GetMapId());
+            posMap["bg objective"] = pos;
+            return true;
+        }
     }
     }
     switch (bgType)
