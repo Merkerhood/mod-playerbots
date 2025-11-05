@@ -30,56 +30,12 @@
 #include "PathGenerator.h"
 #include "ServerFacade.h"
 #include "Vehicle.h"
-#include "BattlefieldMgr.h"
 #include "Battlefield.h"
 #include "ChooseTravelTargetAction.h"
 #include "ObjectAccessor.h"
 #include "TravelMgr.h"
 
-// Wintergrasp Battlefield Data constants (from AzerothCore BattlefieldWG.h)
-enum WintergraspData
-{
-    BATTLEFIELD_WG_DATA_INTACT_TOWER_ATT,
-    BATTLEFIELD_WG_DATA_DAMAGED_TOWER_ATT,
-    BATTLEFIELD_WG_DATA_BROKEN_TOWER_ATT,
-    BATTLEFIELD_WG_DATA_MAX_VEHICLE_A,
-    BATTLEFIELD_WG_DATA_MAX_VEHICLE_H,
-    BATTLEFIELD_WG_DATA_VEHICLE_A,
-    BATTLEFIELD_WG_DATA_VEHICLE_H,
-    BATTLEFIELD_WG_DATA_MAX,
-};
 
-// Real AzerothCore Wintergrasp workshop and data IDs
-enum WintergraspWorkshopIds
-{
-    BATTLEFIELD_WG_WORKSHOP_NE = 0,
-    BATTLEFIELD_WG_WORKSHOP_NW = 1,
-    BATTLEFIELD_WG_WORKSHOP_SE = 2,
-    BATTLEFIELD_WG_WORKSHOP_SW = 3,
-    BATTLEFIELD_WG_WORKSHOP_KEEP_WEST = 4,
-    BATTLEFIELD_WG_WORKSHOP_KEEP_EAST = 5,
-};
-
-enum WintergraspDataIds
-{
-    BATTLEFIELD_WG_DATA_INTACT_TOWER_ATT = 0,
-    BATTLEFIELD_WG_DATA_DAMAGED_TOWER_ATT = 1,
-    BATTLEFIELD_WG_DATA_BROKEN_TOWER_ATT = 2,
-    BATTLEFIELD_WG_DATA_MAX_VEHICLE_A = 3,
-    BATTLEFIELD_WG_DATA_MAX_VEHICLE_H = 4,
-    BATTLEFIELD_WG_DATA_VEHICLE_A = 5,
-    BATTLEFIELD_WG_DATA_VEHICLE_H = 6,
-    BATTLEFIELD_WG_DATA_MAX = 7,
-};
-
-enum WintergraspGameObjects
-{
-    GO_WINTERGRASP_FACTORY_BANNER_NE = 190475,
-    GO_WINTERGRASP_FACTORY_BANNER_NW = 190487,
-    GO_WINTERGRASP_FACTORY_BANNER_SE = 194959,
-    GO_WINTERGRASP_FACTORY_BANNER_SW = 194962,
-    GO_WINTERGRASP_TITAN_S_RELIC = 192829,
-};
 
 // common bg positions
 Position const WS_WAITING_POS_HORDE_1 = {944.981f, 1423.478f, 345.434f, 6.18f};
@@ -154,21 +110,12 @@ Position const IC_CANNON_POS_ALLIANCE2 = {425.525f, -779.538f, 87.717f, 5.88f};
 Position const IC_GATE_ATTACK_POS_HORDE = {506.782f, -828.594f, 24.313f, 0.0f};
 Position const IC_GATE_ATTACK_POS_ALLIANCE = {1091.273f, -763.619f, 42.352f, 0.0f};
 
-// Wintergrasp key positions (from TC 3.3.5)
-// Fortress outer gate (siege focus for attackers)
-static Position const WG_GATE_POS = {5162.991f, 2841.232f, 410.1892f, -3.132858f};
-// Titan's Relic (final objective for attackers)
-static Position const WG_RELIC_POS = {5440.379f, 2840.493f, 430.2816f, -1.832595f};
-// Southern/external towers (attacker siege boosters / defender priorities)
-static Position const WG_TOWER_W_POS = {4557.173f, 3623.943f, 395.8828f, 1.675516f};
-static Position const WG_TOWER_S_POS = {4398.172f, 2822.497f, 405.6270f, -3.124123f};
-static Position const WG_TOWER_E_POS = {4459.105f, 1944.326f, 434.9912f, -2.002762f};
-
-// WG vehicle entries (Trinity 3.3.5)
-static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_A = 28312;
-static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_H = 32627;
-static constexpr uint32 WG_ENTRY_CATAPULT       = 27881;
-static constexpr uint32 WG_ENTRY_DEMOLISHER     = 28094;
+// Wintergrasp key positions (from TC 3.3.5) - definitions for extern declarations in header
+Position const WG_GATE_POS = {5162.991f, 2841.232f, 410.1892f, -3.132858f};    // Fortress outer gate (siege focus for attackers)
+Position const WG_RELIC_POS = {5440.379f, 2840.493f, 430.2816f, -1.832595f};   // Titan's Relic (final objective for attackers)
+Position const WG_TOWER_W_POS = {4557.173f, 3623.943f, 395.8828f, 1.675516f};  // Western tower (attacker siege boosters / defender priorities)
+Position const WG_TOWER_S_POS = {4398.172f, 2822.497f, 405.6270f, -3.124123f}; // Southern tower
+Position const WG_TOWER_E_POS = {4459.105f, 1944.326f, 434.9912f, -2.002762f}; // Eastern tower
 
 enum BattleBotWsgWaitSpot
 {
@@ -1673,7 +1620,7 @@ bool BGTactics::eyJumpDown()
 bool BGTactics::Execute(Event event)
 {
     Battleground* bg = bot->GetBattleground();
-    bool isWGZone = (bot->GetZoneId() == 4197);
+    bool isWGZone = (bot->GetZoneId() == WINTERGRASP_ZONE_ID);
     if (!bg && !isWGZone)
     {
         botAI->ResetStrategies();
@@ -1700,8 +1647,6 @@ bool BGTactics::Execute(Event event)
         bgType = bot->GetBattleground()->GetBgTypeID(true);
 
     // Wintergrasp (Battlefield) support: set paths/flags by zone
-    // Wintergrasp (Battlefield) support: set paths/flags by zone
-    // isWGZone already set above
     if (isWGZone)
     {
         vPaths = &vPaths_WG;
@@ -1740,7 +1685,7 @@ bool BGTactics::Execute(Event event)
             vFlagIds = &vFlagsIC;
             break;
         }
-        // Note: Wintergrasp is a Battlefield on AzerothCore (handled by zoneId 4197 above)
+        // Note: Wintergrasp is a Battlefield on AzerothCore (handled by zoneId WINTERGRASP_ZONE_ID above)
         default:
             // can't use this in this BG - no vPaths/vFlagIds (will crash server)
             // For WG (Battlefield) we rely on zone-based handling above
@@ -1852,7 +1797,7 @@ bool BGTactics::Execute(Event event)
 bool BGTactics::moveToStart(bool force)
 {
     Battleground* bg = bot->GetBattleground();
-    bool isWGZone = (bot->GetZoneId() == 4197);
+    bool isWGZone = (bot->GetZoneId() == WINTERGRASP_ZONE_ID);
     if (!bg && !isWGZone)
         return false;
 
@@ -1970,7 +1915,7 @@ bool BGTactics::moveToStart(bool force)
     }
     else if (isWGZone)
     {
-        Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197 /* Wintergrasp */);
+        Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID /* Wintergrasp */);
         if (!bf || !bf->IsWarTime())
             return true;
         // Spread bots across lanes before battle start to avoid zerging one spot.
@@ -2002,7 +1947,7 @@ bool BGTactics::moveToStart(bool force)
                 lane = WG_TOWER_E_POS;
 
             return MoveTo(bot->GetMapId(), lane.GetPositionX() + frand(-8.0f, 8.0f), lane.GetPositionY() + frand(-8.0f, 8.0f), lane.GetPositionZ());
-    }
+        }
     }
 
     return true;
@@ -2011,7 +1956,7 @@ bool BGTactics::moveToStart(bool force)
 bool BGTactics::selectObjective(bool reset)
 {
     Battleground* bg = bot->GetBattleground();
-    bool isWGZone = (bot->GetZoneId() == 4197);
+    bool isWGZone = (bot->GetZoneId() == WINTERGRASP_ZONE_ID);
     if (!bg)
     {
         // Allow Wintergrasp objective selection outside of Battleground
@@ -2036,7 +1981,7 @@ bool BGTactics::selectObjective(bool reset)
     // Wintergrasp Battlefield objective selection (zone-driven)
     if (isWGZone)
     {
-        Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);
+        Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID);
         if (!bf)
             return false;
 
@@ -2058,7 +2003,6 @@ bool BGTactics::selectObjective(bool reset)
         }
 
         // WG Strategy system based on team objectives
-        enum WGBotStrategy { WG_STRATEGY_BALANCED = 0, WG_STRATEGY_OFFENSIVE, WG_STRATEGY_DEFENSIVE };
         WGBotStrategy strategy = static_cast<WGBotStrategy>(role % 3);
 
         // Dynamic battle state analysis
@@ -2116,9 +2060,9 @@ bool BGTactics::selectObjective(bool reset)
         }
 
         // Rank tracking and priority adjustments (affects vehicle access and tactical priorities)
-        bool hasWGRank = bot->HasAura(37795) || bot->HasAura(33280) || bot->HasAura(55629); // Recruit, Corporal, Lieutenant
-        bool hasCorporal = bot->HasAura(33280) || bot->HasAura(55629); // Corporal or Lieutenant
-        bool hasLieutenant = bot->HasAura(55629); // Lieutenant
+        bool hasWGRank = bot->HasAura(WG_SPELL_RECRUIT) || bot->HasAura(WG_SPELL_CORPORAL) || bot->HasAura(WG_SPELL_LIEUTENANT); // Recruit, Corporal, Lieutenant
+        bool hasCorporal = bot->HasAura(WG_SPELL_CORPORAL) || bot->HasAura(WG_SPELL_LIEUTENANT); // Corporal or Lieutenant
+        bool hasLieutenant = bot->HasAura(WG_SPELL_LIEUTENANT); // Lieutenant
 
         // Rank-based priority modifiers
         uint8 rankMultiplier = hasLieutenant ? 3 : (hasCorporal ? 2 : (hasWGRank ? 1 : 0));
@@ -2542,6 +2486,12 @@ bool BGTactics::selectObjective(bool reset)
             }
         }
 
+        // Vehicle usage decision based on tactical situation
+        bool shouldUseVehicles = (workshopsControlled > 0) && // Must have workshops for vehicles
+                                (maxVehiclesAvailable > 0) && // Must have vehicle capacity
+                                (!isLateGame || !isDefender) && // Defenders focus on relic defense in late game
+                                (hasWGRank); // Must have appropriate rank
+
         // Priority 6: Vehicle acquisition (rank-aware and workshop-limited)
         if (shouldUseVehicles && !bot->GetVehicle() && hasWGRank)
         {
@@ -2671,7 +2621,6 @@ bool BGTactics::selectObjective(bool reset)
             posMap["bg objective"] = pos;
             return true;
         }
-    }
     }
     switch (bgType)
     {
@@ -2957,7 +2906,7 @@ bool BGTactics::selectObjective(bool reset)
 
             break;
         }
-        // Note: Wintergrasp is a Battlefield on AzerothCore (handled by zoneId 4197 above)
+        // Note: Wintergrasp is a Battlefield on AzerothCore (handled by zoneId WINTERGRASP_ZONE_ID above)
         case BATTLEGROUND_WS:
         {
             Position target;
@@ -3994,7 +3943,7 @@ bool BGTactics::selectObjective(bool reset)
 bool BGTactics::moveToObjective(bool ignoreDist)
 {
     Battleground* bg = bot->GetBattleground();
-    bool isWGZone = (bot->GetZoneId() == 4197);
+    bool isWGZone = (bot->GetZoneId() == WINTERGRASP_ZONE_ID);
     if (!bg && !isWGZone)
         return false;
 
@@ -4178,7 +4127,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 bool BGTactics::resetObjective()
 {
     Battleground* bg = bot->GetBattleground();
-    bool isWGZone = (bot->GetZoneId() == 4197);
+    bool isWGZone = (bot->GetZoneId() == WINTERGRASP_ZONE_ID);
 
     // Adjust role-change chance based on battleground type
     uint32 oddsToChangeRole = 1; // default low
@@ -4394,7 +4343,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
 {
     // Basic sanity checks
     Battleground* bg = bot->GetBattleground();
-    bool isWGZone = (bot->GetZoneId() == 4197);
+    bool isWGZone = (bot->GetZoneId() == WINTERGRASP_ZONE_ID);
     if (!bg && !isWGZone)
         return false;
 
@@ -5086,19 +5035,19 @@ bool WintergraspTravelAction::isUseful()
         return false;
     }
 
-    if (bot->GetZoneId() == 4197) // already in WG
+    if (bot->GetZoneId() == WINTERGRASP_ZONE_ID) // already in WG
     {
         LOG_DEBUG("playerbots", "WG travel gated: already in WG zone for bot {}", bot->GetName());
         return false;
     }
 
-    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
+    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID))
     {
         // Travel during wartime, or pre-stage when the battlefield exists (no timer exposed; staging is opportunistic)
         return true;
     }
 
-    LOG_DEBUG("playerbots", "WG travel gated: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
+    LOG_DEBUG("playerbots", "WG travel gated: no Battlefield for WG (zone WINTERGRASP_ZONE_ID) for bot {}", bot->GetName());
     return false;
 }
 
@@ -5156,10 +5105,10 @@ bool WintergraspQueueAction::isUseful()
         return false;
     }
 
-    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);
+    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID);
     if (!bf)
     {
-        LOG_DEBUG("playerbots", "WG queue gated: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
+        LOG_DEBUG("playerbots", "WG queue gated: no Battlefield for WG (zone WINTERGRASP_ZONE_ID) for bot {}", bot->GetName());
         return false;
     }
 
@@ -5171,7 +5120,7 @@ bool WintergraspQueueAction::isUseful()
     }
 
     // Simple level gate: respect WG bracket (default 79-80)
-    auto it = sRandomPlayerbotMgr->zone2LevelBracket.find(4197);
+    auto it = sRandomPlayerbotMgr->zone2LevelBracket.find(WINTERGRASP_ZONE_ID);
     if (it != sRandomPlayerbotMgr->zone2LevelBracket.end())
     {
         uint32 minL = it->second.low;
@@ -5187,13 +5136,13 @@ bool WintergraspQueueAction::isUseful()
 
 bool WintergraspQueueAction::Execute(Event /*event*/)
 {
-    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
+    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID))
     {
         bf->PlayerAcceptInviteToQueue(bot);
         LOG_INFO("playerbots", "Bot {} queued for Wintergrasp", bot->GetName());
         return true;
     }
-    LOG_DEBUG("playerbots", "WG queue Execute: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
+    LOG_DEBUG("playerbots", "WG queue Execute: no Battlefield for WG (zone WINTERGRASP_ZONE_ID) for bot {}", bot->GetName());
     return false;
 }
 
@@ -5208,10 +5157,10 @@ bool WintergraspEnterWarAction::isUseful()
         return false;
     }
 
-    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197);
+    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID);
     if (!bf)
     {
-        LOG_DEBUG("playerbots", "WG enter gated: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
+        LOG_DEBUG("playerbots", "WG enter gated: no Battlefield for WG (zone WINTERGRASP_ZONE_ID) for bot {}", bot->GetName());
         return false;
     }
 
@@ -5223,7 +5172,7 @@ bool WintergraspEnterWarAction::isUseful()
     }
 
     // If already in Wintergrasp map/zone, no need
-    if (bot->GetZoneId() == 4197)
+    if (bot->GetZoneId() == WINTERGRASP_ZONE_ID)
     {
         LOG_DEBUG("playerbots", "WG enter gated: already in WG zone for bot {}", bot->GetName());
         return false;
@@ -5242,7 +5191,7 @@ bool WintergraspEnterWarAction::isUseful()
             Player* plr = pair.second;
             if (!plr || !plr->IsInWorld())
                 continue;
-            if (plr->GetZoneId() != 4197)
+            if (plr->GetZoneId() != WINTERGRASP_ZONE_ID)
                 continue;
             if (sRandomPlayerbotMgr->IsRandomBot(plr))
                 continue; // skip bots
@@ -5267,13 +5216,13 @@ bool WintergraspEnterWarAction::isUseful()
 
 bool WintergraspEnterWarAction::Execute(Event /*event*/)
 {
-    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197))
+    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID))
     {
         bf->PlayerAcceptInviteToWar(bot);
         LOG_INFO("playerbots", "Bot {} forced entry into Wintergrasp war", bot->GetName());
         return true;
     }
-    LOG_DEBUG("playerbots", "WG enter Execute: no Battlefield for WG (zone 4197) for bot {}", bot->GetName());
+    LOG_DEBUG("playerbots", "WG enter Execute: no Battlefield for WG (zone WINTERGRASP_ZONE_ID) for bot {}", bot->GetName());
     return false;
 }
 

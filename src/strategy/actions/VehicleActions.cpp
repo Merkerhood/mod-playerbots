@@ -6,6 +6,7 @@
 #include "VehicleActions.h"
 
 #include "BattlegroundIC.h"
+#include "BattleGroundTactics.h"
 #include "ItemVisitors.h"
 #include "ObjectDefines.h"
 #include "Playerbots.h"
@@ -14,19 +15,6 @@
 #include "Unit.h"
 #include "Vehicle.h"
 #include "BattlefieldMgr.h"
-
-// Wintergrasp rank auras (from TC 3.3.5 BattlefieldWG.h)
-static constexpr uint32 WG_SPELL_RECRUIT    = 37795;
-static constexpr uint32 WG_SPELL_CORPORAL   = 33280;
-static constexpr uint32 WG_SPELL_LIEUTENANT = 55629;
-static constexpr uint32 WG_ZONE_ID          = 4197; // Wintergrasp Zone
-
-// Wintergrasp vehicle entries (Trinity 3.3.5)
-static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_A = 28312;
-static constexpr uint32 WG_ENTRY_SIEGE_ENGINE_H = 32627;
-static constexpr uint32 WG_ENTRY_CATAPULT       = 27881;
-static constexpr uint32 WG_ENTRY_DEMOLISHER     = 28094;
-static constexpr uint32 WG_TOWER_CANNON_ENTRY   = 28366; // NPC_WINTERGRASP_TOWER_CANNON
 
 // Wintergrasp key position (Gate) to detect fortress pressure
 static constexpr float WG_GATE_X = 5162.991f;
@@ -66,7 +54,7 @@ bool EnterVehicleAction::Execute(Event event)
         return false;
 
     // In Wintergrasp, require rank aura before entering vehicles
-    bool isInWG = (bot->GetZoneId() == WG_ZONE_ID);
+    bool isInWG = (bot->GetZoneId() == WINTERGRASP_ZONE_ID);
     if (isInWG && !HasWGRankAtLeast(bot))
         return false;
 
@@ -92,7 +80,7 @@ bool EnterVehicleAction::Execute(Event event)
     bool isWGDefender = false;
     if (isInWG)
     {
-        if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WG_ZONE_ID))
+        if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID))
         {
             // Do not enter vehicles during WG preparation (no wartime)
             if (!bf->IsWarTime())

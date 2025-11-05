@@ -5,6 +5,7 @@
 
 #include "PlayerbotAIConfig.h"
 #include <iostream>
+#include "BattleGroundTactics.h"
 #include "Config.h"
 #include "NewRpgInfo.h"
 #include "PlayerbotDungeonSuggestionMgr.h"
@@ -370,7 +371,7 @@ bool PlayerbotAIConfig::Initialize()
         // The Burning Crusade - Zones
         3483, 3518, 3519, 3520, 3521, 3522, 3523, 4080,
         // Wrath of the Lich King - Zones
-        65, 66, 67, 210, 394, 495, 2817, 3537, 3711, 4197
+        65, 66, 67, 210, 394, 495, 2817, 3537, 3711, WINTERGRASP_ZONE_ID
     };
 
     for (uint32 zoneId : zoneIds)

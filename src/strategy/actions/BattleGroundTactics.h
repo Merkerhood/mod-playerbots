@@ -50,6 +50,71 @@ enum EYBotStrategy : uint8
     EY_STRATEGY_MAX           = 4
 };
 
+// Wintergrasp Zone and Constants
+constexpr uint32 WINTERGRASP_ZONE_ID = 4197;
+
+// Wintergrasp Strategy Types
+enum WGBotStrategy : uint8
+{
+    WG_STRATEGY_BALANCED  = 0,
+    WG_STRATEGY_OFFENSIVE = 1,
+    WG_STRATEGY_DEFENSIVE = 2,
+    WG_STRATEGY_MAX       = 3
+};
+
+// Wintergrasp Battlefield Data constants (from AzerothCore BattlefieldWG.h)
+enum WintergraspDataIds
+{
+    BATTLEFIELD_WG_DATA_INTACT_TOWER_ATT = 0,
+    BATTLEFIELD_WG_DATA_DAMAGED_TOWER_ATT = 1,
+    BATTLEFIELD_WG_DATA_BROKEN_TOWER_ATT = 2,
+    BATTLEFIELD_WG_DATA_MAX_VEHICLE_A = 3,
+    BATTLEFIELD_WG_DATA_MAX_VEHICLE_H = 4,
+    BATTLEFIELD_WG_DATA_VEHICLE_A = 5,
+    BATTLEFIELD_WG_DATA_VEHICLE_H = 6,
+    BATTLEFIELD_WG_DATA_MAX = 7,
+};
+
+// Wintergrasp Workshop IDs
+enum WintergraspWorkshopIds
+{
+    BATTLEFIELD_WG_WORKSHOP_NE = 0,
+    BATTLEFIELD_WG_WORKSHOP_NW = 1,
+    BATTLEFIELD_WG_WORKSHOP_SE = 2,
+    BATTLEFIELD_WG_WORKSHOP_SW = 3,
+    BATTLEFIELD_WG_WORKSHOP_KEEP_WEST = 4,
+    BATTLEFIELD_WG_WORKSHOP_KEEP_EAST = 5,
+};
+
+// Wintergrasp Game Objects
+enum WintergraspGameObjects
+{
+    GO_WINTERGRASP_FACTORY_BANNER_NE = 190475,
+    GO_WINTERGRASP_FACTORY_BANNER_NW = 190487,
+    GO_WINTERGRASP_FACTORY_BANNER_SE = 194959,
+    GO_WINTERGRASP_FACTORY_BANNER_SW = 194962,
+    GO_WINTERGRASP_TITAN_S_RELIC = 192829,
+};
+
+// Wintergrasp Vehicle Entries
+constexpr uint32 WG_ENTRY_SIEGE_ENGINE_A = 28312;
+constexpr uint32 WG_ENTRY_SIEGE_ENGINE_H = 32627;
+constexpr uint32 WG_ENTRY_CATAPULT       = 27881;
+constexpr uint32 WG_ENTRY_DEMOLISHER     = 28094;
+constexpr uint32 WG_TOWER_CANNON_ENTRY   = 28366; // NPC_WINTERGRASP_TOWER_CANNON
+
+// Wintergrasp Rank Auras
+constexpr uint32 WG_SPELL_RECRUIT    = 37795;
+constexpr uint32 WG_SPELL_CORPORAL   = 33280;
+constexpr uint32 WG_SPELL_LIEUTENANT = 55629;
+
+// Wintergrasp Key Positions
+extern Position const WG_GATE_POS;    // Fortress outer gate (siege focus for attackers)
+extern Position const WG_RELIC_POS;   // Titan's Relic (final objective for attackers)
+extern Position const WG_TOWER_W_POS; // Western tower
+extern Position const WG_TOWER_S_POS; // Southern tower
+extern Position const WG_TOWER_E_POS; // Eastern tower
+
 typedef void (*BattleBotWaypointFunc)();
 
 struct BGStrategyData

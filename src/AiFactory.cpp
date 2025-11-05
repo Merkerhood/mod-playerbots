@@ -7,6 +7,7 @@
 
 #include "BattlegroundMgr.h"
 #include "BattlefieldMgr.h"
+#include "BattleGroundTactics.h"
 #include "DKAiObjectContext.h"
 #include "DruidAiObjectContext.h"
 #include "Engine.h"
@@ -731,7 +732,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     }
     // Ensure Wintergrasp strategy is available; triggers inside gate actual behavior.
     // Always add for random bots so they can react to wartime and travel.
-    if (sRandomPlayerbotMgr->IsRandomBot(player) || (sBattlefieldMgr->GetBattlefieldToZoneId(4197) != nullptr))
+    if (sRandomPlayerbotMgr->IsRandomBot(player) || (sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID) != nullptr))
         nonCombatEngine->addStrategy("wintergrasp", false);
 
     // nonCombatEngine->addStrategy("battleground");

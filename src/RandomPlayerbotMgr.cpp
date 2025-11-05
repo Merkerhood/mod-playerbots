@@ -19,6 +19,7 @@
 #include "ArenaTeamMgr.h"
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
+#include "BattleGroundTactics.h"
 #include "CellImpl.h"
 #include "ChannelMgr.h"
 #include "DBCStores.h"
@@ -1380,7 +1381,7 @@ void RandomPlayerbotMgr::CheckWGFill()
 
     WGCheckTimer = time(nullptr);
 
-    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(4197 /* Wintergrasp */);
+    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID);
     if (!bf)
         return;
 
@@ -1395,7 +1396,7 @@ void RandomPlayerbotMgr::CheckWGFill()
     {
         if (!p || !p->IsInWorld())
             continue;
-        if (p->GetZoneId() != 4197)
+        if (p->GetZoneId() != WINTERGRASP_ZONE_ID)
             continue;
 
         TeamId t = p->GetTeamId();
@@ -1417,7 +1418,7 @@ void RandomPlayerbotMgr::CheckWGFill()
 
     // WG level bracket (default 79-80)
     uint32 minLevel = 79;
-    auto it = zone2LevelBracket.find(4197);
+    auto it = zone2LevelBracket.find(WINTERGRASP_ZONE_ID);
     if (it != zone2LevelBracket.end())
         minLevel = it->second.low;
 
@@ -1433,7 +1434,7 @@ void RandomPlayerbotMgr::CheckWGFill()
             continue;
         if (p->InBattleground())
             continue;
-        if (p->GetZoneId() == 4197)
+        if (p->GetZoneId() == WINTERGRASP_ZONE_ID)
             continue; // already in WG
 
         eligible[p->GetTeamId()].push_back(p);
@@ -1976,7 +1977,7 @@ void RandomPlayerbotMgr::PrepareZone2LevelBracket()
     zone2LevelBracket[2817] = {77, 80};  // Crystalsong Forest
     zone2LevelBracket[3537] = {68, 75};  // Borean Tundra
     zone2LevelBracket[3711] = {75, 80};  // Sholazar Basin
-    zone2LevelBracket[4197] = {79, 80};  // Wintergrasp
+    zone2LevelBracket[WINTERGRASP_ZONE_ID] = {79, 80};  // Wintergrasp
 
     // Override with values from config
     for (auto const& [zoneId, bracketPair] : sPlayerbotAIConfig->zoneBrackets)
