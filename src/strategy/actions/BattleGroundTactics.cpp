@@ -49,6 +49,15 @@ enum WintergraspData
     BATTLEFIELD_WG_DATA_MAX,
 };
 
+// Workshop control tracking (estimated IDs - may need adjustment for specific core)
+enum WintergraspWorkshopData
+{
+    BATTLEFIELD_WG_DATA_WORKSHOP_NE = 50,
+    BATTLEFIELD_WG_DATA_WORKSHOP_NW = 51,
+    BATTLEFIELD_WG_DATA_WORKSHOP_SE = 52,
+    BATTLEFIELD_WG_DATA_WORKSHOP_SW = 53,
+};
+
 // common bg positions
 Position const WS_WAITING_POS_HORDE_1 = {944.981f, 1423.478f, 345.434f, 6.18f};
 Position const WS_WAITING_POS_HORDE_2 = {948.488f, 1459.834f, 343.066f, 6.27f};
@@ -2041,11 +2050,63 @@ bool BGTactics::selectObjective(bool reset)
         uint32 towersRemaining = intactTowers;
         bool towersDestroyed = (towersRemaining == 0);
 
-        // Role assignments based on team and strategy
-        uint8 workshopFocusProb = 3;  // Workshop cappers
-        uint8 towerDefenseProb = 2;   // Tower defenders (attackers only)
-        uint8 fortressAssaultProb = 3; // Direct fortress assault
-        uint8 pvpHunterProb = 2;      // PvP roamers
+        // Workshop control detection (affects vehicle availability and priorities)
+        uint32 workshopsControlled = 0;
+        TeamId myTeam = TeamId(bot->GetTeamId());
+
+        // Count workshops controlled by bot's team (fallback to estimated count if data unavailable)
+        try {
+            if (bf->GetData(BATTLEFIELD_WG_DATA_WORKSHOP_NE) == myTeam) workshopsControlled++;
+            if (bf->GetData(BATTLEFIELD_WG_DATA_WORKSHOP_NW) == myTeam) workshopsControlled++;
+            if (bf->GetData(BATTLEFIELD_WG_DATA_WORKSHOP_SE) == myTeam) workshopsControlled++;
+            if (bf->GetData(BATTLEFIELD_WG_DATA_WORKSHOP_SW) == myTeam) workshopsControlled++;
+        } catch (...) {
+            // Fallback: estimate workshop control based on team and strategy
+            workshopsControlled = isDefender ? 2 : 1; // Defenders typically hold more workshops initially
+        }
+
+        // Dynamic vehicle limits based on workshop control (each workshop = +2 vehicle capacity)
+        uint32 baseVehicleLimit = isDefender ? 4 : 6; // Attackers need more vehicles for siege
+        uint32 maxVehiclesAvailable = baseVehicleLimit + (workshopsControlled * 2);
+
+        // Keep/fortress destruction state detection (affects attacker priorities)
+        bool outerWallsDestroyed = false;
+        bool innerWallsDestroyed = false;
+        bool keepDoorDestroyed = false;
+        bool relicAccessible = false;
+
+        // Estimate fortress breach status based on battle progress and time
+        if (!isDefender) {
+            float progressEstimate = (1800.0f - timeRemaining) / 1800.0f; // 0.0 = start, 1.0 = end
+            outerWallsDestroyed = (progressEstimate > 0.3f) || (brokenTowers >= 2);
+            innerWallsDestroyed = (progressEstimate > 0.6f) || (brokenTowers >= 3);
+            keepDoorDestroyed = (progressEstimate > 0.8f);
+            relicAccessible = keepDoorDestroyed && (progressEstimate > 0.9f);
+        }
+
+        // Rank tracking and priority adjustments (affects vehicle access and tactical priorities)
+        bool hasWGRank = bot->HasAura(37795) || bot->HasAura(33280) || bot->HasAura(55629); // Recruit, Corporal, Lieutenant
+        bool hasCorporal = bot->HasAura(33280) || bot->HasAura(55629); // Corporal or Lieutenant
+        bool hasLieutenant = bot->HasAura(55629); // Lieutenant
+
+        // Rank-based priority modifiers
+        uint8 rankMultiplier = hasLieutenant ? 3 : (hasCorporal ? 2 : (hasWGRank ? 1 : 0));
+        bool canUseAdvancedVehicles = hasCorporal; // Catapults/Demolishers require Corporal+
+        bool canUseSiegeEngines = hasLieutenant;   // Siege Engines require Lieutenant
+
+        // Time-based urgency adjustments
+        float urgencyMultiplier = 1.0f;
+        if (isLateGame) {
+            urgencyMultiplier = 2.0f; // Double priority weights in final 10 minutes
+        } else if (timeRemaining < 900) { // Last 15 minutes
+            urgencyMultiplier = 1.5f; // 50% increase in urgency
+        }
+
+        // Role assignments based on team and strategy (modified by urgency and rank)
+        uint8 workshopFocusProb = uint8(3 * urgencyMultiplier);  // Workshop cappers
+        uint8 towerDefenseProb = uint8(2 * urgencyMultiplier);   // Tower defenders (attackers only)
+        uint8 fortressAssaultProb = uint8(3 * urgencyMultiplier * (canUseAdvancedVehicles ? 1.5f : 1.0f)); // Direct fortress assault (boosted by rank)
+        uint8 pvpHunterProb = uint8(2 + rankMultiplier);         // PvP roamers (rank incentive)
 
         if (isDefender)
         {
@@ -2139,23 +2200,45 @@ bool BGTactics::selectObjective(bool reset)
 
             if (!workshop_banners.empty())
             {
-                // Prioritize workshops closer to enemy base for attackers, closer to friendly base for defenders
+                // Enhanced workshop prioritization with group coordination
                 GameObject* bestWorkshop = nullptr;
                 float bestScore = -1.0f;
 
                 for (GameObject* workshop : workshop_banners)
                 {
                     float distToGate = workshop->GetDistance(WG_GATE_POS);
-                    float score;
+                    float baseScore;
 
                     if (isDefender)
-                        score = 500.0f - distToGate; // Defenders prefer workshops near gate
+                        baseScore = 500.0f - distToGate; // Defenders prefer workshops near gate
                     else
-                        score = distToGate; // Attackers prefer workshops far from gate (captured ones)
+                        baseScore = distToGate; // Attackers prefer workshops far from gate (captured ones)
 
-                    if (score > bestScore)
+                    // Group coordination: count nearby allies for workshop captures
+                    uint32 nearbyAllies = 0;
+                    std::list<ObjectGuid> nearbyUnits = botAI->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest friendly players")->Get();
+                    for (ObjectGuid const& allyGuid : nearbyUnits)
                     {
-                        bestScore = score;
+                        if (Unit* ally = botAI->GetUnit(allyGuid))
+                        {
+                            if (ally->GetDistance(workshop) < 40.0f) // Close enough to help capture
+                                nearbyAllies++;
+                        }
+                    }
+
+                    // Bonus for coordinated captures (more allies = higher priority)
+                    float coordinationBonus = nearbyAllies * 50.0f;
+
+                    // Late game urgency for workshop control
+                    float urgencyBonus = 0.0f;
+                    if (isLateGame && workshopsControlled < 2)
+                        urgencyBonus = 100.0f;
+
+                    float finalScore = baseScore + coordinationBonus + urgencyBonus;
+
+                    if (finalScore > bestScore)
+                    {
+                        bestScore = finalScore;
                         bestWorkshop = workshop;
                     }
                 }
@@ -2351,11 +2434,30 @@ bool BGTactics::selectObjective(bool reset)
                         shouldEscort = false;
                     }
                 }
-                // Escort friendly siege engines
-                else if (isFriendly && d < 150.0f && !isDefender &&
+                // Enhanced escort for friendly siege engines with coordination
+                else if (isFriendly && d < 200.0f && !isDefender &&
                          (entry == WG_ENTRY_SIEGE_ENGINE_A || entry == WG_ENTRY_SIEGE_ENGINE_H || entry == WG_ENTRY_DEMOLISHER))
                 {
-                    if (d < bestDist && (role % 5 == 4)) // Only some bots escort
+                    // Count current escorts for this vehicle
+                    uint32 currentEscorts = 0;
+                    std::list<ObjectGuid> nearbyAllies = botAI->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest friendly players")->Get();
+                    for (ObjectGuid const& allyGuid : nearbyAllies)
+                    {
+                        if (Unit* ally = botAI->GetUnit(allyGuid))
+                        {
+                            if (ally->GetDistance(v) < 50.0f && !ally->GetVehicle()) // Ally escorting this vehicle
+                                currentEscorts++;
+                        }
+                    }
+
+                    // Decide if this bot should escort based on need and role
+                    bool shouldProvideEscort = false;
+                    if (currentEscorts < 2) // Need more escorts
+                        shouldProvideEscort = (role % 4 == 3) || (currentEscorts == 0); // Priority roles or critical need
+                    else if (isLateGame && currentEscorts < 3) // Late game needs more protection
+                        shouldProvideEscort = (role % 6 == 5);
+
+                    if (shouldProvideEscort && d < bestDist)
                     {
                         bestDist = d;
                         targetVehicle = v;
@@ -2368,15 +2470,40 @@ bool BGTactics::selectObjective(bool reset)
             {
                 if (shouldEscort)
                 {
-                    // Follow friendly vehicle at escort distance
-                    float rx, ry, rz;
-                    bot->GetRandomPoint(targetVehicle->GetPosition(), frand(25.0f, 45.0f), rx, ry, rz);
-                    pos.Set(rx, ry, rz, bot->GetMapId());
+                    // Advanced escort positioning with formation awareness
+                    float escortDistance = 30.0f + (role % 3) * 10.0f; // 30-50 yard formation spread
+
+                    // Position escorts in formation around the vehicle
+                    float escortAngle = 0.0f;
+                    switch (role % 4)
+                    {
+                        case 0: escortAngle = 0.0f; break;      // Front escort (scout)
+                        case 1: escortAngle = M_PI / 2; break; // Right flank
+                        case 2: escortAngle = M_PI; break;     // Rear guard
+                        case 3: escortAngle = 3 * M_PI / 2; break; // Left flank
+                    }
+
+                    // Calculate escort position relative to vehicle's movement direction
+                    float vehicleOrientation = targetVehicle->GetOrientation();
+                    float finalAngle = vehicleOrientation + escortAngle;
+
+                    float escortX = targetVehicle->GetPositionX() + escortDistance * cos(finalAngle);
+                    float escortY = targetVehicle->GetPositionY() + escortDistance * sin(finalAngle);
+                    float escortZ = targetVehicle->GetPositionZ();
+
+                    pos.Set(escortX, escortY, escortZ, bot->GetMapId());
                 }
                 else
                 {
-                    // Attack enemy vehicle
-                    pos.Set(targetVehicle->GetPositionX(), targetVehicle->GetPositionY(), targetVehicle->GetPositionZ(), bot->GetMapId());
+                    // Attack enemy vehicle with flanking maneuvers
+                    float attackAngle = frand(0, 2 * M_PI); // Random flanking angle
+                    float attackDistance = 15.0f + frand(0, 20.0f); // 15-35 yard attack range
+
+                    float attackX = targetVehicle->GetPositionX() + attackDistance * cos(attackAngle);
+                    float attackY = targetVehicle->GetPositionY() + attackDistance * sin(attackAngle);
+                    float attackZ = targetVehicle->GetPositionZ();
+
+                    pos.Set(attackX, attackY, attackZ, bot->GetMapId());
                     context->GetValue<Unit*>("current target")->Set(targetVehicle);
                 }
                 posMap["bg objective"] = pos;
@@ -2384,37 +2511,53 @@ bool BGTactics::selectObjective(bool reset)
             }
         }
 
-        // Priority 6: Vehicle acquisition (similar to IC vehicle spawns)
-        if (shouldUseVehicles && !bot->GetVehicle())
+        // Priority 6: Vehicle acquisition (rank-aware and workshop-limited)
+        if (shouldUseVehicles && !bot->GetVehicle() && hasWGRank)
         {
-            GuidVector nearVehicles = AI_VALUE(GuidVector, "nearest vehicles");
-            Unit* bestVehicle = nullptr;
-            float bestVehDist = FLT_MAX;
+            // Get current team vehicle count
+            uint32 currentVehicles = isDefender ?
+                bf->GetData(BATTLEFIELD_WG_DATA_VEHICLE_A) :
+                bf->GetData(BATTLEFIELD_WG_DATA_VEHICLE_H);
 
-            for (ObjectGuid const& vg : nearVehicles)
+            // Only try to get vehicle if under limit
+            if (currentVehicles < maxVehiclesAvailable)
             {
-                Unit* v = botAI->GetUnit(vg);
-                if (!v || !v->IsFriendlyTo(bot))
-                    continue;
+                GuidVector nearVehicles = AI_VALUE(GuidVector, "nearest vehicles");
+                Unit* bestVehicle = nullptr;
+                float bestVehDist = FLT_MAX;
 
-                uint32 entry = v->GetEntry();
-                if (entry != WG_ENTRY_SIEGE_ENGINE_A && entry != WG_ENTRY_SIEGE_ENGINE_H &&
-                    entry != WG_ENTRY_DEMOLISHER && entry != WG_ENTRY_CATAPULT)
-                    continue;
-
-                float d = bot->GetDistance(v);
-                if (d < bestVehDist && d < 100.0f)
+                for (ObjectGuid const& vg : nearVehicles)
                 {
-                    bestVehDist = d;
-                    bestVehicle = v;
-                }
-            }
+                    Unit* v = botAI->GetUnit(vg);
+                    if (!v || !v->IsFriendlyTo(bot))
+                        continue;
 
-            if (bestVehicle)
-            {
-                pos.Set(bestVehicle->GetPositionX(), bestVehicle->GetPositionY(), bestVehicle->GetPositionZ(), bot->GetMapId());
-                posMap["bg objective"] = pos;
-                return true;
+                    uint32 entry = v->GetEntry();
+
+                    // Rank-based vehicle access control
+                    bool canUseThisVehicle = false;
+                    if (entry == WG_ENTRY_CATAPULT || entry == WG_ENTRY_DEMOLISHER)
+                        canUseThisVehicle = canUseAdvancedVehicles;
+                    else if (entry == WG_ENTRY_SIEGE_ENGINE_A || entry == WG_ENTRY_SIEGE_ENGINE_H)
+                        canUseThisVehicle = canUseSiegeEngines;
+
+                    if (!canUseThisVehicle)
+                        continue;
+
+                    float d = bot->GetDistance(v);
+                    if (d < bestVehDist && d < 100.0f)
+                    {
+                        bestVehDist = d;
+                        bestVehicle = v;
+                    }
+                }
+
+                if (bestVehicle)
+                {
+                    pos.Set(bestVehicle->GetPositionX(), bestVehicle->GetPositionY(), bestVehicle->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
             }
         }
 

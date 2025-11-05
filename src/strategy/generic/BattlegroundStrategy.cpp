@@ -104,18 +104,16 @@ void WintergraspStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("bg active", NextAction::array(0, new NextAction("enter vehicle", ACTION_MOVE + 7.0f), nullptr)));
     triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("enter vehicle", ACTION_MOVE + 6.5f), nullptr)));
 
-    // Vehicle ability usage
+    // Wintergrasp vehicle ability usage (authentic WG vehicle abilities)
+    // Catapult/Demolisher: Boulder attacks for siege warfare
     triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("hurl boulder", ACTION_MOVE + 9.0f), nullptr)));
-    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("fire cannon", ACTION_MOVE + 9.0f), nullptr)));
-    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("incendiary rocket", ACTION_MOVE + 9.0f), nullptr)));
-    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("rocket blast", ACTION_MOVE + 9.0f), nullptr)));
-    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("napalm", ACTION_MOVE + 9.0f), nullptr)));
 
-    // Close-quarters while in vehicles (steam/ram style interactions)
-    triggers.push_back(new TriggerNode("enemy is close", NextAction::array(0, new NextAction("steam blast", ACTION_MOVE + 9.0f), nullptr)));
-    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("ram", ACTION_MOVE + 9.0f), nullptr)));
+    // Siege Engine: Primary cannon fire and ram attacks
+    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("fire cannon", ACTION_MOVE + 8.9f), nullptr)));
+    triggers.push_back(new TriggerNode("in vehicle", NextAction::array(0, new NextAction("ram", ACTION_MOVE + 8.8f), nullptr)));
+
+    // All vehicles: Close-quarters ram when enemies are near
     triggers.push_back(new TriggerNode("enemy is close", NextAction::array(0, new NextAction("ram", ACTION_MOVE + 9.1f), nullptr)));
-    triggers.push_back(new TriggerNode("enemy out of melee", NextAction::array(0, new NextAction("steam rush", ACTION_MOVE + 9.2f), nullptr)));
 
     // Objective and capture flow for Battlefield WG (zone-based)
     // Drive the same BGTactics actions used in BGs but without requiring InBattleground()
