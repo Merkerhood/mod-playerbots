@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU GPL v2 license, you may redistribute it
- * and/or modify it under version 2 of the License, or (at your option), any later version.
+ * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license, you may redistribute it
+ * and/or modify it under version 3 of the License, or (at your option), any later version.
  */
 
 #include "RandomPlayerbotMgr.h"
@@ -19,6 +19,7 @@
 #include "ArenaTeamMgr.h"
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
+#include "BattleGroundTactics.h"
 #include "CellImpl.h"
 #include "ChannelMgr.h"
 #include "DBCStores.h"
@@ -52,6 +53,8 @@
 #include "Unit.h"
 #include "UpdateTime.h"
 #include "World.h"
+#include "BattlefieldMgr.h"
+#include "Battlefield.h"
 
 struct GuidClassRaceInfo
 {
@@ -241,6 +244,10 @@ RandomPlayerbotMgr::RandomPlayerbotMgr() : PlayerbotHolder(), processTicks(0)
     BgCheckTimer = 0;
     LfgCheckTimer = 0;
     PlayersCheckTimer = 0;
+    WGCheckTimer = 0;
+
+    // Cache Wintergrasp team capacity to avoid repeated config lookups
+    wgTeamCapCache = sWorld->getIntConfig(CONFIG_WINTERGRASP_PLR_MAX);
 }
 
 RandomPlayerbotMgr::~RandomPlayerbotMgr() {}
@@ -458,6 +465,13 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool /*minimal*/)
             sRandomPlayerbotMgr->CheckBgQueue();
     }
 
+    // Fill Wintergrasp during wartime when a real player is present, up to 40 per team
+    if (sPlayerbotAIConfig->randomBotJoinWG)
+    {
+        if (time(nullptr) > (WGCheckTimer + 5))
+            sRandomPlayerbotMgr->CheckWGFill();
+    }
+
     if (sPlayerbotAIConfig->randomBotJoinLfg /* && !players.empty()*/)
     {
         if (time(nullptr) > (LfgCheckTimer + 30))
@@ -633,7 +647,7 @@ void RandomPlayerbotMgr::AssignAccountTypes()
     uint32 existingRndBotAccounts = 0;
     uint32 existingAddClassAccounts = 0;
 
-    for (const auto& [accountId, accountType] : currentAssignments)
+    for (auto const& [accountId, accountType] : currentAssignments)
     {
         if (accountType == 1) existingRndBotAccounts++;
         else if (accountType == 2) existingAddClassAccounts++;
@@ -688,7 +702,7 @@ void RandomPlayerbotMgr::AssignAccountTypes()
     }
 
     // Populate filtered account lists with ALL accounts of each type
-    for (const auto& [accountId, accountType] : currentAssignments)
+    for (auto const& [accountId, accountType] : currentAssignments)
     {
         if (accountType == 1) rndBotTypeAccounts.push_back(accountId);
         else if (accountType == 2) addClassTypeAccounts.push_back(accountId);
@@ -798,7 +812,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
         std::vector<CharacterInfo> allianceChars;
         std::vector<CharacterInfo> hordeChars;
 
-        for (const auto& charInfo : allCharacters)
+        for (auto const& charInfo : allCharacters)
         {
             if (IsAlliance(charInfo.rRace))
                 allianceChars.push_back(charInfo);
@@ -832,7 +846,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
         };
 
         // PHASE 1: Log-in Alliance bots up to allowedAllianceCount
-        for (const auto& charInfo : allianceChars)
+        for (auto const& charInfo : allianceChars)
         {
             if (!allowedAllianceCount)
                 break;
@@ -845,7 +859,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
         }
 
         // PHASE 2: Log-in Horde bots up to maxAllowedBotCount
-        for (const auto& charInfo : hordeChars)
+        for (auto const& charInfo : hordeChars)
         {
             if (!maxAllowedBotCount)
                 break;
@@ -855,7 +869,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
         }
 
         // PHASE 3: If maxAllowedBotCount wasn't reached, log-in more Alliance bots
-        for (const auto& charInfo : allianceChars)
+        for (auto const& charInfo : allianceChars)
         {
             if (!maxAllowedBotCount)
                 break;
@@ -1248,7 +1262,7 @@ void RandomPlayerbotMgr::CheckBgQueue()
 
 void RandomPlayerbotMgr::LogBattlegroundInfo()
 {
-    for (const auto& queueTypePair : BattlegroundData)
+    for (auto const& queueTypePair : BattlegroundData)
     {
         uint8 queueType = queueTypePair.first;
 
@@ -1256,7 +1270,7 @@ void RandomPlayerbotMgr::LogBattlegroundInfo()
 
         if (uint8 type = BattlegroundMgr::BGArenaType(queueTypeId))
         {
-            for (const auto& bracketIdPair : queueTypePair.second)
+            for (auto const& bracketIdPair : queueTypePair.second)
             {
                 auto& bgInfo = bracketIdPair.second;
                 if (bgInfo.minLevel == 0)
@@ -1306,7 +1320,7 @@ void RandomPlayerbotMgr::LogBattlegroundInfo()
                 break;
         }
 
-        for (const auto& bracketIdPair : queueTypePair.second)
+        for (auto const& bracketIdPair : queueTypePair.second)
         {
             auto& bgInfo = bracketIdPair.second;
             if (bgInfo.minLevel == 0)
@@ -1361,6 +1375,110 @@ void RandomPlayerbotMgr::CheckLfgQueue()
     LOG_DEBUG("playerbots", "LFG Queue check finished");
 }
 
+void RandomPlayerbotMgr::CheckWGFill()
+{
+    if (!WGCheckTimer)
+    {
+        WGCheckTimer = time(nullptr);
+        return;
+    }
+
+    WGCheckTimer = time(nullptr);
+
+    Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID);
+    if (!bf)
+        return;
+
+    if (!bf->IsWarTime())
+        return;
+
+    // Count real players and bots currently in WG zone by team
+    uint32 realInWG[2] = {0, 0};
+    uint32 botInWG[2] = {0, 0};
+
+    for (Player* p : players)
+    {
+        if (!p || !p->IsInWorld())
+            continue;
+        if (p->GetZoneId() != WINTERGRASP_ZONE_ID)
+            continue;
+
+        TeamId t = p->GetTeamId();
+        if (sRandomPlayerbotMgr->IsRandomBot(p))
+            ++botInWG[t];
+        else
+            ++realInWG[t];
+    }
+
+    // Only fill if at least one real player is present, unless auto-join is enabled
+    if (!sPlayerbotAIConfig->randomBotAutoJoinWGQueue)
+    {
+        if (realInWG[TEAM_ALLIANCE] == 0 && realInWG[TEAM_HORDE] == 0)
+            return;
+    }
+
+    // Use cached team cap value to avoid repeated config lookups
+    const uint32 teamCap = wgTeamCapCache;
+
+    // WG level bracket (default 79-80)
+    uint32 minLevel = 79;
+    auto it = zone2LevelBracket.find(WINTERGRASP_ZONE_ID);
+    if (it != zone2LevelBracket.end())
+        minLevel = it->second.low;
+
+    // Build eligible bot lists per team
+    std::vector<Player*> eligible[2];
+    for (Player* p : players)
+    {
+        if (!p || !p->IsInWorld())
+            continue;
+        if (!sRandomPlayerbotMgr->IsRandomBot(p))
+            continue;
+        if (p->GetLevel() < minLevel)
+            continue;
+        if (p->InBattleground())
+            continue;
+        if (p->GetZoneId() == WINTERGRASP_ZONE_ID)
+            continue; // already in WG
+
+        eligible[p->GetTeamId()].push_back(p);
+    }
+
+    auto inviteTeam = [&](TeamId team)
+    {
+        uint32 current = realInWG[team] + botInWG[team];
+        if (current >= teamCap)
+            return;
+        uint32 need = teamCap - current;
+
+        uint32 invited = 0;
+        // randomize selection to spread load (use our global RandomEngine)
+        std::shuffle(eligible[team].begin(), eligible[team].end(), RandomEngine::Instance());
+        for (Player* b : eligible[team])
+        {
+            if (!b || !b->IsInWorld())
+                continue;
+
+            bf->PlayerAcceptInviteToWar(b);
+            ++invited;
+            if (invited >= need)
+                break;
+        }
+
+        if (invited)
+        {
+            LOG_INFO("playerbots", "WG fill: invited {} bots for {} (real={}, bots={}, cap={})", invited,
+                     team == TEAM_ALLIANCE ? "Alliance" : "Horde", realInWG[team], botInWG[team], teamCap);
+        }
+    };
+
+    LOG_DEBUG("playerbots", "WG fill check: A(real={}, bots={}) H(real={}, bots={})", realInWG[TEAM_ALLIANCE],
+              botInWG[TEAM_ALLIANCE], realInWG[TEAM_HORDE], botInWG[TEAM_HORDE]);
+
+    inviteTeam(TEAM_ALLIANCE);
+    inviteTeam(TEAM_HORDE);
+}
+
 void RandomPlayerbotMgr::CheckPlayers()
 {
     if (!PlayersCheckTimer || time(nullptr) > (PlayersCheckTimer + 60))
@@ -1405,6 +1523,11 @@ void RandomPlayerbotMgr::ScheduleChangeStrategy(uint32 bot, uint32 time)
                      sPlayerbotAIConfig->maxRandomBotChangeStrategyTime);
 
     SetEventValue(bot, "change_strategy", 1, time);
+}
+
+void RandomPlayerbotMgr::RefreshWGTeamCapCache()
+{
+    wgTeamCapCache = sWorld->getIntConfig(CONFIG_WINTERGRASP_PLR_MAX);
 }
 
 bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
@@ -1517,33 +1640,38 @@ bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
     return false;
 }
 
-bool RandomPlayerbotMgr::ProcessBot(Player* player)
+bool RandomPlayerbotMgr::ProcessBot(Player* bot)
 {
-    uint32 bot = player->GetGUID().GetCounter();
 
-    if (player->InBattleground())
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
         return false;
 
-    if (player->InBattlegroundQueue())
+    if (bot->InBattleground())
         return false;
+
+    if (bot->InBattlegroundQueue())
+        return false;
+
+     uint32 botId = bot->GetGUID().GetCounter();
 
     // if death revive
-    if (player->isDead())
+    if (bot->isDead())
     {
-        if (!GetEventValue(bot, "dead"))
+        if (!GetEventValue(botId, "dead"))
         {
             uint32 randomTime =
                 urand(sPlayerbotAIConfig->minRandomBotReviveTime, sPlayerbotAIConfig->maxRandomBotReviveTime);
-            LOG_DEBUG("playerbots", "Mark bot {} as dead, will be revived in {}s.", player->GetName().c_str(),
+            LOG_DEBUG("playerbots", "Mark bot {} as dead, will be revived in {}s.", bot->GetName().c_str(),
                       randomTime);
-            SetEventValue(bot, "dead", 1, sPlayerbotAIConfig->maxRandomBotInWorldTime);
-            SetEventValue(bot, "revive", 1, randomTime);
+            SetEventValue(botId, "dead", 1, sPlayerbotAIConfig->maxRandomBotInWorldTime);
+            SetEventValue(botId, "revive", 1, randomTime);
             return false;
         }
 
-        if (!GetEventValue(bot, "revive"))
+        if (!GetEventValue(botId, "revive"))
         {
-            Revive(player);
+            Revive(bot);
             return true;
         }
 
@@ -1551,34 +1679,31 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
     }
 
     // leave group if leader is rndbot
-    Group* group = player->GetGroup();
+    Group* group = bot->GetGroup();
     if (group && !group->isLFGGroup() && IsRandomBot(group->GetLeader()))
     {
-        player->RemoveFromGroup();
-        LOG_INFO("playerbots", "Bot {} remove from group since leader is random bot.", player->GetName().c_str());
+        botAI->LeaveOrDisbandGroup();
+        LOG_INFO("playerbots", "Bot {} remove from group since leader is random bot.", bot->GetName().c_str());
     }
 
     // only randomize and teleport idle bots
     bool idleBot = false;
-    PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
-    if (botAI)
+    if (TravelTarget* target = botAI->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get())
     {
-        if (TravelTarget* target = botAI->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get())
-        {
-            if (target->getTravelState() == TravelState::TRAVEL_STATE_IDLE)
-            {
-                idleBot = true;
-            }
-        }
-        else
+        if (target->getTravelState() == TravelState::TRAVEL_STATE_IDLE)
         {
             idleBot = true;
         }
     }
+    else
+    {
+        idleBot = true;
+    }
+
     if (idleBot)
     {
         // randomize
-        uint32 randomize = GetEventValue(bot, "randomize");
+        uint32 randomize = GetEventValue(botId, "randomize");
         if (!randomize)
         {
             // bool randomiser = true;
@@ -1602,12 +1727,12 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
             // }
             // if (randomiser)
             // {
-            Randomize(player);
-            LOG_DEBUG("playerbots", "Bot #{} {}:{} <{}>: randomized", bot,
-                      player->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", player->GetLevel(), player->GetName());
+            Randomize(bot);
+            LOG_DEBUG("playerbots", "Bot #{} {}:{} <{}>: randomized", botId,
+                      bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
             uint32 randomTime =
                 urand(sPlayerbotAIConfig->minRandomBotRandomizeTime, sPlayerbotAIConfig->maxRandomBotRandomizeTime);
-            ScheduleRandomize(bot, randomTime);
+            ScheduleRandomize(botId, randomTime);
             return true;
         }
 
@@ -1619,15 +1744,15 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
         //     return true;
         // }
 
-        uint32 teleport = GetEventValue(bot, "teleport");
+        uint32 teleport = GetEventValue(botId, "teleport");
         if (!teleport)
         {
-            LOG_DEBUG("playerbots", "Bot #{} <{}>: teleport for level and refresh", bot, player->GetName());
-            Refresh(player);
-            RandomTeleportForLevel(player);
+            LOG_DEBUG("playerbots", "Bot #{} <{}>: teleport for level and refresh", botId, bot->GetName());
+            Refresh(bot);
+            RandomTeleportForLevel(bot);
             uint32 time = urand(sPlayerbotAIConfig->minRandomBotTeleportInterval,
                                 sPlayerbotAIConfig->maxRandomBotTeleportInterval);
-            ScheduleTeleport(bot, time);
+            ScheduleTeleport(botId, time);
             return true;
         }
     }
@@ -1702,7 +1827,6 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation>&
         return;
     }
 
-
     PerformanceMonitorOperation* pmo = sPerformanceMonitor->start(PERF_MON_RNDBOT, "RandomTeleportByLocations");
 
     std::shuffle(std::begin(tlocs), std::end(tlocs), RandomEngine::Instance());
@@ -1771,6 +1895,7 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation>&
         PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
         if (botAI)
             botAI->Reset(true);
+        bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TELEPORTED | AURA_INTERRUPT_FLAG_CHANGE_MAP);
         bot->TeleportTo(loc.GetMapId(), x, y, z, 0);
         bot->SendMovementFlagUpdate();
 
@@ -1860,7 +1985,7 @@ void RandomPlayerbotMgr::PrepareZone2LevelBracket()
     zone2LevelBracket[2817] = {77, 80};  // Crystalsong Forest
     zone2LevelBracket[3537] = {68, 75};  // Borean Tundra
     zone2LevelBracket[3711] = {75, 80};  // Sholazar Basin
-    zone2LevelBracket[4197] = {79, 80};  // Wintergrasp
+    zone2LevelBracket[WINTERGRASP_ZONE_ID] = {79, 80};  // Wintergrasp
 
     // Override with values from config
     for (auto const& [zoneId, bracketPair] : sPlayerbotAIConfig->zoneBrackets)
@@ -2253,7 +2378,7 @@ void RandomPlayerbotMgr::RandomTeleportForLevel(Player* bot)
         // Pick a weighted city randomly, then a random banker in that city
         //   then teleport to that banker
         CityId selectedCity = weightedCities[urand(0, weightedCities.size() - 1)];
-        const auto& bankers = cityToBankers.at(selectedCity);
+        auto const& bankers = cityToBankers.at(selectedCity);
         uint32 selectedBankerEntry = bankers[urand(0, bankers.size() - 1)];
         auto locIt = bankerEntryToLocation.find(selectedBankerEntry);
         if (locIt != bankerEntryToLocation.end())
@@ -2376,6 +2501,10 @@ void RandomPlayerbotMgr::IncreaseLevel(Player* bot)
 
 void RandomPlayerbotMgr::RandomizeFirst(Player* bot)
 {
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
+        return;
+
     uint32 maxLevel = sPlayerbotAIConfig->randomBotMaxLevel;
     if (maxLevel > sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
         maxLevel = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
@@ -2433,7 +2562,6 @@ void RandomPlayerbotMgr::RandomizeFirst(Player* bot)
     }
 
     SetValue(bot, "level", level);
-
     PlayerbotFactory factory(bot, level);
     factory.Randomize(false);
 
@@ -2455,11 +2583,10 @@ void RandomPlayerbotMgr::RandomizeFirst(Player* bot)
     PlayerbotsDatabase.Execute(stmt);
 
     // teleport to a random inn for bot level
-    if (GET_PLAYERBOT_AI(bot))
-        GET_PLAYERBOT_AI(bot)->Reset(true);
+    botAI->Reset(true);
 
     if (bot->GetGroup())
-        bot->RemoveFromGroup();
+        botAI->LeaveOrDisbandGroup();
 
     if (pmo)
         pmo->finish();
@@ -2469,12 +2596,13 @@ void RandomPlayerbotMgr::RandomizeFirst(Player* bot)
 
 void RandomPlayerbotMgr::RandomizeMin(Player* bot)
 {
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
+        return;
+
     PerformanceMonitorOperation* pmo = sPerformanceMonitor->start(PERF_MON_RNDBOT, "RandomizeMin");
-
     uint32 level = sPlayerbotAIConfig->randomBotMinLevel;
-
     SetValue(bot, "level", level);
-
     PlayerbotFactory factory(bot, level);
     factory.Randomize(false);
 
@@ -2496,11 +2624,10 @@ void RandomPlayerbotMgr::RandomizeMin(Player* bot)
     PlayerbotsDatabase.Execute(stmt);
 
     // teleport to a random inn for bot level
-    if (GET_PLAYERBOT_AI(bot))
-        GET_PLAYERBOT_AI(bot)->Reset(true);
+    botAI->Reset(true);
 
     if (bot->GetGroup())
-        bot->RemoveFromGroup();
+        botAI->LeaveOrDisbandGroup();
 
     if (pmo)
         pmo->finish();
@@ -2582,7 +2709,7 @@ void RandomPlayerbotMgr::Refresh(Player* bot)
     bot->SetMoney(money + 500 * sqrt(urand(1, bot->GetLevel() * 5)));
 
     if (bot->GetGroup())
-        bot->RemoveFromGroup();
+        botAI->LeaveOrDisbandGroup();
 
     if (pmo)
         pmo->finish();
@@ -3090,6 +3217,7 @@ void RandomPlayerbotMgr::OnPlayerLogin(Player* player)
             } while (true);
         }
 
+        player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TELEPORTED | AURA_INTERRUPT_FLAG_CHANGE_MAP);
         player->TeleportTo(botPos);
 
         // player->Relocate(botPos.getX(), botPos.getY(), botPos.getZ(), botPos.getO());

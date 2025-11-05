@@ -1,11 +1,13 @@
 /*
- * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU GPL v2 license, you may redistribute it
- * and/or modify it under version 2 of the License, or (at your option), any later version.
+ * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license, you may redistribute it
+ * and/or modify it under version 3 of the License, or (at your option), any later version.
  */
 
 #include "AiFactory.h"
 
 #include "BattlegroundMgr.h"
+#include "BattlefieldMgr.h"
+#include "BattleGroundTactics.h"
 #include "DKAiObjectContext.h"
 #include "DruidAiObjectContext.h"
 #include "Engine.h"
@@ -295,7 +297,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             {
                 engine->addStrategiesNoInit("dps", "shadow debuff", "shadow aoe", nullptr);
             }
-            else if (tab == PRIEST_TAB_DISIPLINE)
+            else if (tab == PRIEST_TAB_DISCIPLINE)
             {
                 engine->addStrategiesNoInit("heal", nullptr);
             }
@@ -413,10 +415,12 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 
             break;
     }
-    if (PlayerbotAI::IsTank(player, true)) {
+    if (PlayerbotAI::IsTank(player, true))
+    {
         engine->addStrategy("tank face", false);
     }
-    if (PlayerbotAI::IsMelee(player, true) && PlayerbotAI::IsDps(player, true)) {
+    if (PlayerbotAI::IsMelee(player, true) && PlayerbotAI::IsDps(player, true))
+    {
         engine->addStrategy("behind", false);
     }
     if (PlayerbotAI::IsHeal(player, true))
@@ -607,7 +611,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                 nonCombatEngine->addStrategy("dps assist", false);
             break;
         case CLASS_WARLOCK:
-            if (tab == WARLOCK_TAB_AFFLICATION)
+            if (tab == WARLOCK_TAB_AFFLICTION)
             {
                 nonCombatEngine->addStrategiesNoInit("felhunter", "spellstone", nullptr);
             }
@@ -706,7 +710,9 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                         // {
                         //     // nonCombatEngine->addStrategy("travel");
                         //     nonCombatEngine->addStrategy("rpg");
-                        // } else {
+                        // }
+                        // else
+                        // {
                         //     nonCombatEngine->addStrategy("move random");
                         // }
 
@@ -728,6 +734,11 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     {
         nonCombatEngine->ChangeStrategy(sPlayerbotAIConfig->nonCombatStrategies);
     }
+    // Ensure Wintergrasp strategy is available; triggers inside gate actual behavior.
+    // Always add for random bots so they can react to wartime and travel.
+    if (sRandomPlayerbotMgr->IsRandomBot(player) || (sBattlefieldMgr->GetBattlefieldToZoneId(WINTERGRASP_ZONE_ID) != nullptr))
+        nonCombatEngine->addStrategy("wintergrasp", false);
+
     // nonCombatEngine->addStrategy("battleground");
     // nonCombatEngine->addStrategy("warsong");
     // Battleground switch
@@ -744,8 +755,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         if (bgType == BATTLEGROUND_RB)
             bgType = player->GetBattleground()->GetBgTypeID(true);
 
-        if ((bgType <= BATTLEGROUND_EY || bgType == BATTLEGROUND_IC) &&
-            !player->InArena())  // do not add for not supported bg or arena
+        bool addBgGeneric = (bgType <= BATTLEGROUND_EY || bgType == BATTLEGROUND_IC);
+        if (addBgGeneric && !player->InArena())
             nonCombatEngine->addStrategy("battleground", false);
 
         if (bgType == BATTLEGROUND_WS)
