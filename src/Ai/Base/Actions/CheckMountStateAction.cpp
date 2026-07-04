@@ -168,7 +168,7 @@ bool CheckMountStateAction::Execute(Event /*event*/)
             // the bot itself is safe. A bot in combat (or with attackers) always falls through
             // to the normal dismount, so it can never get stuck mounted while being attacked.
             if (noAttackers && !bot->IsInCombat() && botAI->GetState() != BOT_STATE_COMBAT &&
-                StayMountedToCloseDistance())
+                StayMountedToCloseDistance(distToMaster))
                 return false;
 
             Dismount();
@@ -178,7 +178,7 @@ bool CheckMountStateAction::Execute(Event /*event*/)
         // Mount up to close the distance to master if beneficial - allow mounting even if master
         // is in combat, as long as the bot itself is not in combat and has no attackers
         else if (!bot->IsMounted() && noAttackers && !bot->IsInCombat() &&
-                 botAI->GetState() != BOT_STATE_COMBAT && ShouldMountToCloseDistance())
+                 botAI->GetState() != BOT_STATE_COMBAT && ShouldMountToCloseDistance(distToMaster))
             return Mount();
 
         return false;
@@ -507,7 +507,7 @@ bool CheckMountStateAction::TryRandomMountFiltered(std::map<int32, std::vector<u
     return false;
 }
 
-bool CheckMountStateAction::StayMountedToCloseDistance() const
+bool CheckMountStateAction::StayMountedToCloseDistance(float distToMaster) const
 {
     // Keep the bot mounted while closing distance to a recently dismounted master.
     // Rationale: if the master dismounts far away, immediately dismounting slows the bot down
@@ -517,8 +517,6 @@ bool CheckMountStateAction::StayMountedToCloseDistance() const
     if (!master)
         return false;
 
-    float distToMaster = ServerFacade::instance().GetDistance2d(bot, master);
-
     // If master is in combat, stay mounted until combat reach, then dismount to assist
     if (master->IsInCombat())
         return distToMaster > CalculateDismountDistance();
@@ -527,7 +525,7 @@ bool CheckMountStateAction::StayMountedToCloseDistance() const
     return distToMaster > sPlayerbotAIConfig.tooCloseDistance;
 }
 
-bool CheckMountStateAction::ShouldMountToCloseDistance() const
+bool CheckMountStateAction::ShouldMountToCloseDistance(float distToMaster) const
 {
     // Mount up to close the distance to master if beneficial.
     // Uses CalculateMountDistance(), which already considers the mount cast time, so the bot
@@ -537,7 +535,6 @@ bool CheckMountStateAction::ShouldMountToCloseDistance() const
     if (!master)
         return false;
 
-    float distToMaster = ServerFacade::instance().GetDistance2d(bot, master);
     return distToMaster > CalculateMountDistance();
 }
 
