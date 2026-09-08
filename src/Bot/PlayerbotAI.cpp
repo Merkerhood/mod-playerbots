@@ -420,10 +420,13 @@ void PlayerbotAI::UpdateAIGroupMaster()
     if (!botAI)
         return;
 
-    // Drop a stale master pointer (master logged out and got destroyed between AI ticks)
-    // before anything below dereferences it
-    if (master && !GetMaster())
-        SetMaster(nullptr);
+    // Re-sync the cached master pointer before anything below dereferences it: the master
+    // Player can be destroyed between AI ticks (logout, or a same-GUID relog that yields a
+    // fresh object). Compare against the re-resolved master, not just against nullptr, so a
+    // swapped-out object is picked up too and not only a lost one.
+    Player* revalidatedMaster = GetMaster();
+    if (master != revalidatedMaster)
+        SetMaster(revalidatedMaster);
 
     Group* group = bot->GetGroup();
 
