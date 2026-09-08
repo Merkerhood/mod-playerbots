@@ -155,10 +155,15 @@ bool CheckMountStateAction::Execute(Event /*event*/)
 
         float distToMaster = ServerFacade::instance().GetDistance2d(bot, master);
 
-        // Mirror the master's mount state only when near (TooCloseDistance, default 5 yd):
-        // farther out the bot either walks (mounting wouldn't pay for its cast time) or
-        // mounts to close a real gap (ShouldMountToCloseDistance, 21+ yd)
-        if (distToMaster <= sPlayerbotAIConfig.tooCloseDistance &&
+        // Mirror the master's mount state when near (TooCloseDistance, default 5 yd), or
+        // whenever the master is actually riding away. Without the second clause there is a
+        // dead band between TooCloseDistance and CalculateMountDistance() where neither rule
+        // fires: 5-21 yd for melee, 5-38.5 yd for casters (max(21, SpellDistance + 10), and
+        // SpellDistance defaults to 28.5). CalculateMountDistance() is a break-even for a
+        // FIXED gap, so it is the wrong test against a master who is opening the gap - and
+        // because a ground mount matches the master's speed rather than beating it, a bot
+        // that waits to cross it then holds that whole distance until the master stops.
+        if ((distToMaster <= sPlayerbotAIConfig.tooCloseDistance || master->isMoving()) &&
             ShouldFollowMasterMountState(master, noAttackers, shouldMount))
             return Mount();
 
