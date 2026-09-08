@@ -120,14 +120,71 @@ bool CheckMountStateAction::Execute(Event /*event*/)
     // If there is a master and bot not in BG, follow master's mount state regardless of group leader
     if (!noRealMaster && !inBattleground)
     {
-        if (ShouldFollowMasterMountState(master, noAttackers, shouldMount))
+        // Only react to the master's mount state while actively following - a bot told to
+        // stay is parked and keeps its current mount state instead of mirroring the master
+        if (!botAI->HasStrategy("follow", BOT_STATE_NON_COMBAT))
+            return false;
+
+        // Assist-aware mount handling: when the bot has an assist target (a mob fighting the
+        // master resolves as "dps target" long before the bot itself is in combat), decide
+        // against the target instead of the master. Without this the bot rides past the fight
+        // to the master's position and oscillates between assisting and re-mounting.
+        Unit* assistTarget = AI_VALUE(Unit*, "dps target");
+        if (!assistTarget)
+            assistTarget = AI_VALUE(Unit*, "enemy player target");
+
+        if (assistTarget)
+        {
+            float reach = bot->GetCombatReach() + assistTarget->GetCombatReach();
+            float distToTarget = bot->GetExactDist(assistTarget);
+
+            // Close enough to engage: dismount so the assist strategies can take over
+            if (distToTarget <= CalculateDismountDistance() + reach)
+            {
+                if (bot->IsMounted())
+                {
+                    Dismount();
+                    return true;
+                }
+
+                // Unmounted next to the assist target: leave mount state alone so the
+                // dps/tank assist trigger can act instead of re-mounting for the master
+                return false;
+            }
+        }
+
+        float distToMaster = ServerFacade::instance().GetDistance2d(bot, master);
+
+        // Mirror the master's mount state when near (TooCloseDistance, default 5 yd), or
+        // whenever the master is actually riding away. Without the second clause there is a
+        // dead band between TooCloseDistance and CalculateMountDistance() where neither rule
+        // fires: 5-21 yd for melee, 5-38.5 yd for casters (max(21, SpellDistance + 10), and
+        // SpellDistance defaults to 28.5). CalculateMountDistance() is a break-even for a
+        // FIXED gap, so it is the wrong test against a master who is opening the gap - and
+        // because a ground mount matches the master's speed rather than beating it, a bot
+        // that waits to cross it then holds that whole distance until the master stops.
+        if ((distToMaster <= sPlayerbotAIConfig.tooCloseDistance || master->isMoving()) &&
+            ShouldFollowMasterMountState(master, noAttackers, shouldMount))
             return Mount();
 
         else if (ShouldDismountForMaster(master) && bot->IsMounted())
         {
+            // If master dismounted, stay mounted until close enough to assist - but only while
+            // the bot itself is safe. A bot in combat (or with attackers) always falls through
+            // to the normal dismount, so it can never get stuck mounted while being attacked.
+            if (noAttackers && !bot->IsInCombat() && botAI->GetState() != BOT_STATE_COMBAT &&
+                StayMountedToCloseDistance(distToMaster))
+                return false;
+
             Dismount();
             return true;
         }
+
+        // Mount up to close the distance to master if beneficial - allow mounting even if master
+        // is in combat, as long as the bot itself is not in combat and has no attackers
+        else if (!bot->IsMounted() && noAttackers && !bot->IsInCombat() &&
+                 botAI->GetState() != BOT_STATE_COMBAT && ShouldMountToCloseDistance(distToMaster))
+            return Mount();
 
         return false;
     }
@@ -453,6 +510,37 @@ bool CheckMountStateAction::TryRandomMountFiltered(const std::map<int32, std::ve
         }
     }
     return false;
+}
+
+bool CheckMountStateAction::StayMountedToCloseDistance(float distToMaster) const
+{
+    // Keep the bot mounted while closing distance to a recently dismounted master.
+    // Rationale: if the master dismounts far away, immediately dismounting slows the bot down
+    // and delays assistance. Instead, remain mounted until within reasonable proximity
+    // of the master, then dismount to help.
+
+    if (!master)
+        return false;
+
+    // If master is in combat, stay mounted until combat reach, then dismount to assist
+    if (master->IsInCombat())
+        return distToMaster > CalculateDismountDistance();
+
+    // If master is not in combat, stay mounted until near the master, then mirror their state
+    return distToMaster > sPlayerbotAIConfig.tooCloseDistance;
+}
+
+bool CheckMountStateAction::ShouldMountToCloseDistance(float distToMaster) const
+{
+    // Mount up to close the distance to master if beneficial.
+    // Uses CalculateMountDistance(), which already considers the mount cast time, so the bot
+    // only mounts when riding is actually faster than running. This also covers the case where
+    // the master is in combat but the bot is not, and the bot needs to mount to reach the master.
+
+    if (!master)
+        return false;
+
+    return distToMaster > CalculateMountDistance();
 }
 
 float CheckMountStateAction::CalculateDismountDistance() const

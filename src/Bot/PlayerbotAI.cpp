@@ -114,6 +114,7 @@ PlayerbotAI::PlayerbotAI()
     : PlayerbotAIBase(true),
       bot(nullptr),
       master(nullptr),
+      masterGuid(),
       accountId(0),
       aiObjectContext(nullptr),
       currentEngine(nullptr),
@@ -137,6 +138,7 @@ PlayerbotAI::PlayerbotAI(Player* bot)
       forceRebuff(bot),
       bot(bot),
       master(nullptr),
+      masterGuid(),
       chatHelper(this),
       chatFilter(this),
       security(bot)  // reorder args - whipowill
@@ -418,6 +420,14 @@ void PlayerbotAI::UpdateAIGroupMaster()
     if (!botAI)
         return;
 
+    // Re-sync the cached master pointer before anything below dereferences it: the master
+    // Player can be destroyed between AI ticks (logout, or a same-GUID relog that yields a
+    // fresh object). Compare against the re-resolved master, not just against nullptr, so a
+    // swapped-out object is picked up too and not only a lost one.
+    Player* revalidatedMaster = GetMaster();
+    if (master != revalidatedMaster)
+        SetMaster(revalidatedMaster);
+
     Group* group = bot->GetGroup();
 
     // If bot is not in group verify that for is RandomBot before clearing  master and resetting.
@@ -446,7 +456,7 @@ void PlayerbotAI::UpdateAIGroupMaster()
         Player* newMaster = FindNewMaster();
         if (newMaster)
         {
-            master = newMaster;
+            SetMaster(newMaster);
             botAI->SetMaster(newMaster);
             botAI->ResetStrategies();
 
@@ -1059,8 +1069,11 @@ void PlayerbotAI::HandleCommand(uint32 type, std::string const text, Player* fro
         if (bot->GetSession()->isLogingOut())
             return;
 
-        // Verify the command came from this bot's master. Also handles nullptr
-        if (fromPlayer != master)
+        // Verify the command came from this bot's master. Also handles nullptr.
+        // Use the validated accessor: this runs from the chat packet handler, outside
+        // the AI tick, where a raw master pointer can be stale after master logout.
+        Player* validMaster = GetMaster();
+        if (!validMaster || fromPlayer != validMaster)
         {
             if (type == CHAT_MSG_WHISPER)
             {
@@ -1071,7 +1084,7 @@ void PlayerbotAI::HandleCommand(uint32 type, std::string const text, Player* fro
             return;
         }
 
-        PlayerbotMgr* masterBotMgr = GET_PLAYERBOT_MGR(master);
+        PlayerbotMgr* masterBotMgr = GET_PLAYERBOT_MGR(validMaster);
         if (!masterBotMgr)
             return;
 
@@ -3066,7 +3079,10 @@ bool PlayerbotAI::TellMaster(std::ostringstream& stream, PlayerbotSecurityLevel 
 
 bool PlayerbotAI::TellMaster(std::string const text, PlayerbotSecurityLevel securityLevel)
 {
-    if (!master)
+    // Use the validated accessor - this runs from packet-driven paths too, where a raw
+    // master pointer can be stale after master logout
+    Player* validMaster = GetMaster();
+    if (!validMaster)
     {
         if (sPlayerbotAIConfig.randomBotSayWithoutMaster)
             return TellMasterNoFacing(text, securityLevel);
@@ -3076,11 +3092,11 @@ bool PlayerbotAI::TellMaster(std::string const text, PlayerbotSecurityLevel secu
     if (!TellMasterNoFacing(text, securityLevel))
         return false;
 
-    if (!bot->isMoving() && !bot->IsInCombat() && bot->GetMapId() == master->GetMapId() &&
+    if (!bot->isMoving() && !bot->IsInCombat() && bot->GetMapId() == validMaster->GetMapId() &&
         !bot->HasUnitState(UNIT_STATE_IN_FLIGHT) && !bot->IsFlying())
     {
-        if (!bot->HasInArc(EMOTE_ANGLE_IN_FRONT, master, sPlayerbotAIConfig.sightDistance))
-            bot->SetFacingToObject(master);
+        if (!bot->HasInArc(EMOTE_ANGLE_IN_FRONT, validMaster, sPlayerbotAIConfig.sightDistance))
+            bot->SetFacingToObject(validMaster);
 
         bot->HandleEmoteCommand(EMOTE_ONESHOT_TALK);
     }
@@ -4477,7 +4493,38 @@ Player* PlayerbotAI::FindNewMaster()
 bool PlayerbotAI::IsAltBot() { return HasGameClientMaster() && !sRandomPlayerbotMgr.IsRandomBot(bot) && !IsSelfBot(bot); }
 
 // True when the bot's master is driven by a player with a game client: a regular player (no bot AI) or a selfbot player.
-bool PlayerbotAI::HasGameClientMaster() { return IsRealPlayer(master) || IsSelfBot(master); }
+bool PlayerbotAI::HasGameClientMaster()
+{
+    // Go through GetMaster() - the raw pointer can be stale after master logout, and
+    // IsRealPlayer/IsSelfBot dereference it
+    Player* validMaster = GetMaster();
+    return IsRealPlayer(validMaster) || IsSelfBot(validMaster);
+}
+
+Player* PlayerbotAI::GetMaster()
+{
+    if (!master)
+        return nullptr;
+
+    // A real player is its own master; that pointer is never validated here (out of scope).
+    if (master == bot)
+        return master;
+
+    // Never hand out a stale pointer: the master Player can be destroyed (logout) between
+    // AI ticks on the map-update threads while bots still hold the raw pointer. Re-resolve
+    // through the ObjectAccessor by GUID and return THAT object, never the cached raw pointer
+    // - a fast same-GUID relog yields a fresh Player, a logged-out master yields nullptr.
+    // FindConnectedPlayer (not FindPlayer): the master must still count as present while
+    // merely loading/teleporting between maps, otherwise every zone transition makes bots
+    // transiently masterless (rejected whisper commands, spurious master resets).
+    return masterGuid ? ObjectAccessor::FindConnectedPlayer(masterGuid) : nullptr;
+}
+
+void PlayerbotAI::SetMaster(Player* newMaster)
+{
+    master = newMaster;
+    masterGuid = newMaster ? newMaster->GetGUID() : ObjectGuid::Empty;
+}
 
 Player* PlayerbotAI::GetGroupLeader()
 {
@@ -4486,7 +4533,7 @@ Player* PlayerbotAI::GetGroupLeader()
             if (Player* player = ObjectAccessor::FindPlayer(group->GetLeaderGUID()))
                 return player;
 
-    return master;
+    return GetMaster();
 }
 
 uint32 PlayerbotAI::GetFixedBotNumber(uint32 maxNum)
