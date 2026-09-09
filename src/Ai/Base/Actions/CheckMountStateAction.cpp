@@ -223,7 +223,19 @@ bool CheckMountStateAction::isUseful()
     // Not useful when in combat and not currently mounted / travel formed
     if ((bot->IsInCombat() || botAI->GetState() == BOT_STATE_COMBAT) &&
         !bot->IsMounted() && botInShapeshiftForm != FORM_TRAVEL && botInShapeshiftForm != FORM_FLIGHT && botInShapeshiftForm != FORM_FLIGHT_EPIC)
+    {
+        // TEMPORARY PROBE, debug/mount-isuseful-probe only. Do not merge.
+        // Case 1 of the mount test plan fails with the bot closing on foot. This gate sits
+        // above every mount decision, so the question is which half of it closes: the real
+        // game rule (a player in combat cannot cast a mount) or the bot's own AI state.
+        LOG_ERROR("server", "[MountDbg] isUseful gate: bot={} inCombat={} aiState={} mounted={} form={} distToMaster={:.1f} masterInCombat={}",
+                  bot->GetName(), bot->IsInCombat() ? 1 : 0,
+                  botAI->GetState() == BOT_STATE_COMBAT ? "COMBAT" : "NON_COMBAT",
+                  bot->IsMounted() ? 1 : 0, static_cast<uint32>(botInShapeshiftForm),
+                  master ? bot->GetExactDist(master) : -1.0f,
+                  (master && master->IsInCombat()) ? 1 : 0);
         return false;
+    }
 
     // In addition to checking IsOutdoors, also check whether bot is clipping below floor slightly because that will
     // cause bot to falsly indicate they are outdoors. This fixes bug where bot tries to mount indoors (which seems
