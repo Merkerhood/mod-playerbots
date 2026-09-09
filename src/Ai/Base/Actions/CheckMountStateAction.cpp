@@ -154,10 +154,13 @@ bool CheckMountStateAction::Execute(Event /*event*/)
         if (!assistTarget)
             assistTarget = AI_VALUE(Unit*, "enemy player target");
 
-        // Skipped while returning to the master under CombatPrioritizeMaster: the mob the bot
-        // picked up resolves as an assist target too, and dismounting for it here would undo the
-        // suppression above one branch later.
-        if (assistTarget && !returningToMaster)
+        // While returning to the master under CombatPrioritizeMaster, skip this only for the mob
+        // the bot is running away from, which resolves as an assist target too and would undo the
+        // suppression above one branch later. Not for any assist target: "dps target" is scored
+        // from the group-wide attackers list, so it can be something attacking the MASTER. Keying
+        // the skip on returningToMaster alone would make the bot ride straight past a mob beating
+        // on its master, which is the opposite of what this config is for.
+        if (assistTarget && !(returningToMaster && assistTarget == currentTarget))
         {
             float reach = bot->GetCombatReach() + assistTarget->GetCombatReach();
             float distToTarget = bot->GetExactDist(assistTarget);
