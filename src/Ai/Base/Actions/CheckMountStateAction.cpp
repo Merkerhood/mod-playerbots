@@ -250,7 +250,21 @@ bool CheckMountStateAction::isUseful()
     // Not useful when in combat and not currently mounted / travel formed
     if ((bot->IsInCombat() || botAI->GetState() == BOT_STATE_COMBAT) &&
         !bot->IsMounted() && botInShapeshiftForm != FORM_TRAVEL && botInShapeshiftForm != FORM_FLIGHT && botInShapeshiftForm != FORM_FLIGHT_EPIC)
+    {
+        // TEMPORARY PROBE, test/full-stack-prtest only. Do not merge.
+        // Test case 1 fails with the bot closing on foot. This gate sits above every mount
+        // decision, so the question is which half closes it: the real game rule (a player in
+        // combat cannot cast a mount) or the bot's own AI state. Only logged when a master
+        // exists and the bot is beyond mount distance, which is the case-1 shape, otherwise
+        // this fires every tick of every fight.
+        if (master && bot->GetExactDist(master) > CalculateMountDistance())
+            LOG_ERROR("server", "[MountDbg] gate closed: bot={} inCombat={} aiState={} distToMaster={:.1f} masterInCombat={} masterMounted={}",
+                      bot->GetName(), bot->IsInCombat() ? 1 : 0,
+                      botAI->GetState() == BOT_STATE_COMBAT ? "COMBAT" : "NON_COMBAT",
+                      bot->GetExactDist(master),
+                      master->IsInCombat() ? 1 : 0, master->IsMounted() ? 1 : 0);
         return false;
+    }
 
     // In addition to checking IsOutdoors, also check whether bot is clipping below floor slightly because that will
     // cause bot to falsly indicate they are outdoors. This fixes bug where bot tries to mount indoors (which seems
