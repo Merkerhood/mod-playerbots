@@ -101,6 +101,27 @@ bool CheckMountStateAction::Execute(Event /*event*/)
         shouldMount = true;
     }
 
+    // CombatPrioritizeMaster: the bot aggroed something of its own and is heading back to its
+    // master instead of holding on it, which is what FollowMasterCombatAction does in the combat
+    // engine. Keep the mount for that trip. Without this the own-target dismount below fires the
+    // instant the mob aggroes, the bot foot-slogs the whole way back, and isUseful() refuses to
+    // re-mount it because it is now unmounted and in combat.
+    //
+    // The conditions mirror CombatFollowMasterTrigger and FollowMasterCombatAction::isUseful so
+    // the two never disagree: a bot that is going to run back keeps its mount, and a shared fight
+    // (master already on the bot's target) falls through to the normal dismount and assists.
+    // Requires a target of the bot's own: with no current target this is the ride-in-and-assist
+    // case, which must keep dismounting at engage range.
+    bool const returningToMaster =
+        sPlayerbotAIConfig.combatPrioritizeMaster && master && master != bot && currentTarget &&
+        master->GetTarget() != currentTarget->GetGUID() &&
+        botAI->HasStrategy("follow", BOT_STATE_NON_COMBAT) &&
+        ServerFacade::instance().IsDistanceGreaterThan(
+            ServerFacade::instance().GetDistance2d(bot, master), sPlayerbotAIConfig.tooCloseDistance);
+
+    if (returningToMaster)
+        shouldDismount = false;
+
     // If should dismount, or master (if any) is no longer in travel form, yet bot still is, remove the shapeshifts
     if (shouldDismount ||
         (masterInShapeshiftForm != FORM_TRAVEL && botInShapeshiftForm == FORM_TRAVEL) ||
@@ -133,7 +154,10 @@ bool CheckMountStateAction::Execute(Event /*event*/)
         if (!assistTarget)
             assistTarget = AI_VALUE(Unit*, "enemy player target");
 
-        if (assistTarget)
+        // Skipped while returning to the master under CombatPrioritizeMaster: the mob the bot
+        // picked up resolves as an assist target too, and dismounting for it here would undo the
+        // suppression above one branch later.
+        if (assistTarget && !returningToMaster)
         {
             float reach = bot->GetCombatReach() + assistTarget->GetCombatReach();
             float distToTarget = bot->GetExactDist(assistTarget);
